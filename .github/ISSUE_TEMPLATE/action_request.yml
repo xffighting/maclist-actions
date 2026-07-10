@@ -1,0 +1,45 @@
+name: Action request
+description: Propose a new local-first handoff action.
+title: "[Action]: "
+labels:
+  - enhancement
+body:
+  - type: input
+    id: app
+    attributes:
+      label: Target application
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired user outcome
+      placeholder: "With selected files, copy real attachments and open..."
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Does the proposed action require network code in this repository?
+      options:
+        - "No"
+        - "Yes"
+        - "Unknown"
+    validations:
+      required: true
+  - type: dropdown
+    id: send
+    attributes:
+      label: Could it paste, choose a recipient, or send automatically?
+      options:
+        - "No"
+        - "Yes"
+        - "Unknown"
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Expected rollback behavior
+    validations:
+      required: true

@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem without sharing private file data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste real document paths, recipients, clipboard contents, licenses, or credentials.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "14.7"
+    validations:
+      required: true
+  - type: input
+    id: cling
+    attributes:
+      label: Cling version
+      placeholder: "2.6.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: action
+    attributes:
+      label: Action
+      options:
+        - Install
+        - Uninstall
+        - Doctor
+        - WeChat
+        - DingTalk
+        - Thunderbird
+        - File checklist
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic filenames and paths.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed private filenames, paths, recipients, clipboard data, licenses, and credentials.
+          required: true

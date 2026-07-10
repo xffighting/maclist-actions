@@ -1,0 +1,17 @@
+ObjC.import("AppKit")
+
+function run(argv) {
+    if (!argv || argv.length === 0) {
+        throw new Error("No files selected")
+    }
+
+    const urls = argv.map((path) => $.NSURL.fileURLWithPath(path))
+    const pasteboard = $.NSPasteboard.generalPasteboard
+    pasteboard.clearContents
+
+    if (!pasteboard.writeObjects($(urls))) {
+        throw new Error("Unable to write file URLs to the pasteboard")
+    }
+
+    return String(urls.length)
+}
