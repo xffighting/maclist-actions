@@ -5,3 +5,5 @@
 *.log
 .env
 work/
+.build/
+.swiftpm/

@@ -42,6 +42,12 @@ check_optional() {
   fi
 }
 
+bundle_available() {
+  local BUNDLE_ID="$1" APP_PATH
+  APP_PATH="$(/usr/bin/osascript -l JavaScript -e 'ObjC.import("AppKit"); function run(argv) { const url = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(argv[0]); return url ? ObjC.unwrap(url.path) : "" }' "$BUNDLE_ID" 2>/dev/null)" || return 1
+  [[ -n "$APP_PATH" && -d "$APP_PATH" ]]
+}
+
 app_version_ok() {
   [[ -n "$APP" ]] || return 1
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null)" == "$EXPECTED_VERSION" ]]
@@ -76,6 +82,8 @@ check "Install manifest private" /bin/zsh -c '[[ "$(/usr/bin/stat -f %Lp "$1/ins
 check "WeChat workflow installed" /bin/test -x "$TARGET_DIR/MacList - 微信_复制文件并打开.zsh"
 check "DingTalk workflow installed" /bin/test -x "$TARGET_DIR/MacList - 钉钉_复制文件并打开.zsh"
 check "Thunderbird workflow installed" /bin/test -x "$TARGET_DIR/MacList - Thunderbird_复制文件并打开.zsh"
+check "Apple Mail workflow installed" /bin/test -x "$TARGET_DIR/MacList - Apple Mail_复制文件并打开.zsh"
+check "Outlook workflow installed" /bin/test -x "$TARGET_DIR/MacList - Outlook_复制文件并打开.zsh"
 check "Checklist workflow installed" /bin/test -x "$TARGET_DIR/MacList - 复制资料清单.zsh"
 check "File URL helper installed" /bin/test -f "$TARGET_DIR/MacList-prepare-share.jxa"
 check "Sentry disabled" /bin/zsh -c '[[ "$(/usr/bin/defaults read "$1" enableSentry 2>/dev/null)" == 0 ]]' -- "$PREF_DOMAIN"
@@ -88,6 +96,8 @@ check "Cling index directory private" /bin/zsh -c '[[ ! -e "$1" || "$(/usr/bin/s
 check_optional "WeChat available" /usr/bin/open -Ra WeChat
 check_optional "DingTalk available" /usr/bin/open -Ra DingTalk
 check_optional "Thunderbird available" /usr/bin/open -Ra Thunderbird
+check_optional "Apple Mail available (com.apple.mail)" bundle_available com.apple.mail
+check_optional "Microsoft Outlook available (com.microsoft.Outlook)" bundle_available com.microsoft.Outlook
 
 if (( FAILURES > 0 )); then
   /usr/bin/printf '%d check(s) failed.\n' "$FAILURES"

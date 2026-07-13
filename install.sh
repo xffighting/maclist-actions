@@ -9,6 +9,7 @@ PREF_DOMAIN="${MACLIST_PREF_DOMAIN:-com.lowtechguys.Cling}"
 EXPECTED_VERSION="2.6.5"
 EXPECTED_BUNDLE_ID="com.lowtechguys.Cling"
 EXPECTED_TEAM_ID="RDDXV84A73"
+CUSTOMIZATION_VERSION="$(/usr/bin/tr -d '[:space:]' < "$ROOT/VERSION")"
 
 ACTIVE_FILE="$STATE_DIR/active"
 INSTALLING_FILE="$STATE_DIR/installing"
@@ -30,6 +31,14 @@ typeset -a PREF_KEYS=(
 die() {
   /usr/bin/printf 'MacList install stopped: %s\n' "$1" >&2
   exit 1
+}
+
+[[ "$CUSTOMIZATION_VERSION" == <->.<->.<-> ]] || die "VERSION must contain a semantic version"
+
+snapshot_has_name() {
+  local NAME="$1"
+  [[ -f "$FILES_BEFORE" ]] || return 1
+  /usr/bin/awk -F '\t' -v name="$NAME" '$1 == name { found = 1 } END { exit !found }' "$FILES_BEFORE"
 }
 
 find_app() {
@@ -74,6 +83,10 @@ if [[ -f "$ACTIVE_FILE" ]]; then
     TARGET="$TARGET_DIR/$NAME"
     if [[ -e "$TARGET" ]] && ! /usr/bin/cmp -s "$SOURCE" "$TARGET"; then
       die "$NAME was edited after installation; uninstall first so the original can be restored safely"
+    fi
+    if ! snapshot_has_name "$NAME"; then
+      [[ ! -e "$TARGET" ]] || die "$NAME is not covered by the rollback snapshot; move it aside and retry"
+      /usr/bin/printf '%s\tabsent\n' "$NAME" >> "$FILES_BEFORE"
     fi
   done
 else
@@ -141,7 +154,7 @@ done
 /usr/bin/defaults write "$PREF_DOMAIN" showFilePreview -bool true
 /usr/bin/defaults write "$PREF_DOMAIN" showSearchHints -bool true
 
-/usr/bin/printf 'customization_version=0.1.0\n' > "$ACTIVE_FILE"
+/usr/bin/printf 'customization_version=%s\n' "$CUSTOMIZATION_VERSION" > "$ACTIVE_FILE"
 /bin/chmod 600 "$ACTIVE_FILE"
 /bin/rm -f "$INSTALLING_FILE"
 /usr/bin/printf 'MacList customization installed. Restart Cling to load all scripts.\n'

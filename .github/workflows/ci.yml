@@ -13,16 +13,117 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: macOS safety and rollback tests
+  actions:
+    name: Cling actions · no-UI regression
     runs-on: macos-latest
     timeout-minutes: 10
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Run non-UI test suite
+      - name: Run non-UI customization tests
         env:
           MACLIST_TEST_NO_UI: "1"
         run: ./test.sh
+
+  standalone:
+    name: Standalone core · unit and smoke tests
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Record Swift toolchain
+        run: |
+          xcode-select -p
+          swift --version
+
+      - name: Run Swift package tests
+        run: swift test --package-path standalone
+
+      - name: Compile and exercise the standalone CLI
+        run: ./standalone/smoke-test.sh
+
+  media:
+    name: Release media · dimensions and privacy
+    runs-on: macos-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Verify social-preview requirements
+        shell: zsh
+        run: |
+          set -euo pipefail
+          preview="docs/assets/social-preview.png"
+          [[ -f "$preview" ]]
+          [[ "$(stat -f '%z' "$preview")" -lt 1048576 ]]
+          [[ "$(sips -g pixelWidth "$preview" | awk '/pixelWidth/ {print $2}')" == "1280" ]]
+          [[ "$(sips -g pixelHeight "$preview" | awk '/pixelHeight/ {print $2}')" == "640" ]]
+
+      - name: Compile Vision media auditor
+        run: xcrun swiftc tools/audit_media.swift -o "$RUNNER_TEMP/maclist-media-audit"
+
+      - name: Audit every release image and GIF frame
+        run: |
+          "$RUNNER_TEMP/maclist-media-audit" \
+            docs/assets/social-preview.png \
+            docs/assets/demo-poster.png \
+            docs/assets/maclist-demo.gif
+
+  repository:
+    name: Repository · metadata, links, and sensitive data
+    runs-on: macos-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Parse repository YAML
+        shell: ruby {0}
+        run: |
+          require "yaml"
+
+          files = Dir.glob("{.github,docs}/**/*.{yml,yaml}")
+          abort "No YAML files found" if files.empty?
+          files.each do |path|
+            YAML.safe_load(File.read(path), aliases: true, filename: path)
+          end
+          puts "PASS parsed #{files.length} YAML file(s)"
+
+      - name: Verify relative Markdown links
+        run: python3 tools/verify_markdown_links.py
+
+      - name: Reject local paths and credential-shaped strings
+        shell: zsh
+        run: |
+          set -euo pipefail
+
+          if git grep -nI -E '/Users/[[:alnum:]_.-]+' -- . ':(exclude)tools/audit_media.swift'; then
+            print -u2 'FAIL tracked text contains an absolute macOS user path'
+            exit 1
+          fi
+
+          if git grep -nI -E -- \
+            '-----BEGIN ([A-Z0-9 ]+ )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}' \
+            -- .; then
+            print -u2 'FAIL tracked text contains a private key or credential-shaped string'
+            exit 1
+          fi
+
+          print 'PASS no absolute macOS user paths or credential-shaped strings found'
+
+      - name: Verify v0.2 release metadata
+        shell: zsh
+        run: |
+          set -euo pipefail
+          [[ "$(tr -d '[:space:]' < VERSION)" == "0.2.0" ]]
+          grep -Fq '## 0.2.0' CHANGELOG.md
+          grep -Fq 'swift-tools-version: 6.0' standalone/Package.swift
+          print 'PASS v0.2.0 metadata is internally consistent'

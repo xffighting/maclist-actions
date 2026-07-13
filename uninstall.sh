@@ -27,6 +27,12 @@ die() {
   exit 1
 }
 
+snapshot_has_name() {
+  local NAME="$1"
+  [[ -f "$FILES_BEFORE" ]] || return 1
+  /usr/bin/awk -F '\t' -v name="$NAME" '$1 == name { found = 1 } END { exit !found }' "$FILES_BEFORE"
+}
+
 if [[ ! -f "$FILES_BEFORE" &&
       ! -f "$PREFS_BEFORE" &&
       ! -f "$MANIFEST" &&
@@ -50,6 +56,15 @@ if [[ -f "$FILES_BEFORE" ]]; then
       die "invalid file snapshot state for $NAME"
     fi
   done < "$FILES_BEFORE"
+  if [[ -f "$MANIFEST" ]]; then
+    while IFS= read -r FILE; do
+      [[ "${FILE:h}" == "$TARGET_DIR" && "${FILE:t}" == MacList* ]] || die "invalid install manifest entry"
+      NAME="${FILE:t}"
+      if ! snapshot_has_name "$NAME"; then
+        /bin/rm -f "$FILE"
+      fi
+    done < "$MANIFEST"
+  fi
 elif [[ -f "$MANIFEST" ]]; then
   LEGACY_STATE=1
   while IFS= read -r FILE; do

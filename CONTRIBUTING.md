@@ -2,6 +2,11 @@
 
 Thanks for helping make file handoff on macOS less tedious.
 
+The repository has two maturity tracks:
+
+- Cling actions are stable and must preserve the current rollback contract.
+- `standalone/` is a Developer Preview and must remain usable without Cling.
+
 ## Add an action
 
 1. Copy one of the executable scripts in `scripts/`.
@@ -17,12 +22,39 @@ Thanks for helping make file handoff on macOS less tedious.
    ```
 
 4. Keep all outbound effects explicit.
-5. Run both test modes:
+5. Identify destination applications by bundle ID, not a localized display name.
+6. Run both test modes:
 
    ```bash
    MACLIST_TEST_NO_UI=1 ./test.sh
    ./test.sh
    ```
+
+## Change the standalone core
+
+Standalone changes must keep scanning limited to roots explicitly supplied by the user and must not read document contents.
+
+Run:
+
+```bash
+cd standalone
+swift test
+./smoke-test.sh
+```
+
+Document any new persisted field, permission, dependency, or platform API. A future launcher must be able to consume the library without parsing human-formatted CLI output.
+
+## Change README media
+
+Media must be reproducible and contain synthetic data only:
+
+```bash
+python3 tools/render_media.py
+swiftc tools/audit_media.swift -framework Vision -framework ImageIO -o /tmp/maclist-media-audit
+/tmp/maclist-media-audit docs/assets/social-preview.png docs/assets/maclist-demo.gif docs/assets/demo-poster.png
+```
+
+Do not use real screenshots, account names, recipients, email addresses, client names, or absolute user paths.
 
 ## Pull-request checklist
 
@@ -34,6 +66,8 @@ Thanks for helping make file handoff on macOS less tedious.
 - [ ] Missing-app behavior is safe.
 - [ ] Rollback behavior is documented.
 - [ ] Tests pass on macOS.
+- [ ] Standalone changes pass `swift test` and the smoke test without Cling.
+- [ ] Media changes pass the frame-by-frame Vision privacy audit.
 
 ## Design principles
 

@@ -1,33 +1,55 @@
-# MacList Actions
+# MacList
 
-**找到文件，交给目标应用；发送仍由你决定。**
+**快速找回文件，交给目标应用；最后一步仍由你决定。**
 
-[English](../README.md) · [最新版本](https://github.com/xffighting/maclist-actions/releases/latest)
+[English](../README.md) · [项目 Dashboard](https://xffighting.github.io/maclist-actions/project-dashboard.html) · [最新版本](https://github.com/xffighting/maclist-actions/releases/latest)
+
+![MacList 使用合成文件名演示文件找回与安全交接](assets/maclist-demo.gif)
 
 > [!IMPORTANT]
-> 这是非官方社区项目，不包含 Cling，也不隶属于 FuzzyIdeas、The Low-Tech Guys、腾讯、钉钉、Mozilla 或 Listary。Cling 的自定义 Scripts 功能可能需要 Pro 或有效试用。
+> MacList v0.2.0 有两条明确分开的路线：**Cling Actions 是稳定可用的文件交接层；Standalone Core 是开发者预览版 CLI/Swift 库，不是已经完成的“Mac 版 Listary”，也还不是签名的 Mac App。**
 
-## 它解决什么
+## 先选路线
 
-Cling 已经能快速找到文件，但“找到以后交给微信、钉钉或邮件”仍要经过 Finder、拖拽和窗口切换。MacList Actions 把这段流程缩短成一个明确动作，同时保留人工确认发送。
+| 路线 | 状态 | 适合什么 | 需要 Cling 吗 |
+|---|---|---|---:|
+| **Cling Actions** | **Stable / 稳定版** | 用 Cling 找到文件，一键复制真实附件并打开目标应用 | 需要；自定义 Scripts 可能需要 Cling Pro 或试用 |
+| **Standalone Core** | **Developer Preview / 开发者预览** | 只为明确授权的目录建立本地元数据索引，并在命令行模糊搜索 | 不需要 |
 
-| 动作 | 主窗口快捷键 | 结果 |
-|---|---:|---|
-| 微信 | Control + Command + W | 复制真实文件并打开微信 |
-| 钉钉 | Control + Command + D | 复制真实文件并打开钉钉 |
-| Thunderbird | Control + Command + E | 复制真实文件并打开 Thunderbird |
-| 资料清单 | Control + Command + L | 复制文件名和完整路径 |
+两条路线服务同一个方向：让过去的资料更容易找回和复用。但它们目前还没有合并成一款独立的图形界面应用。
 
-在 Cling 的 Execute script 面板中，也可以直接按 W、D、E 或 L。
+## 稳定路线：Cling Actions
 
-## 安装条件
+找到资料以后，常见的麻烦是还要打开 Finder、拖到微信或邮件、再确认是不是一个真正的附件。MacList Actions 把中间这段缩成一个动作：
 
-- macOS 14 或更高版本。
-- 官方 [Cling 2.6.5](https://github.com/FuzzyIdeas/Cling/releases/tag/v2.6.5)。
-- **Cling Pro 或仍有效的试用期，用于自定义 Scripts。**
-- 微信、钉钉、Thunderbird 均为独立可选；只安装你实际使用的应用即可。
+1. 在 Cling 里搜索并选中文件；
+2. 运行 MacList 动作；
+3. MacList 把真实文件 URL 放入剪贴板，并打开目标应用；
+4. 你自己选择聊天或邮件，按 **Command + V**，检查后发送。
 
-## 安装
+不上传文件，不自动选择对象，不自动发送。
+
+### 动作与快捷键
+
+| 动作 | 快捷键 | 结果 | 自动发送？ |
+|---|---:|---|---:|
+| 微信 | `⌃⌘W` | 复制真实文件并打开微信 | 否 |
+| 钉钉 | `⌃⌘D` | 复制真实文件并打开钉钉 | 否 |
+| Thunderbird | `⌃⌘E` | 复制真实文件并打开 Thunderbird | 否 |
+| Apple Mail | `⌃⌘M` | 复制真实文件并打开 Apple Mail | 否 |
+| Microsoft Outlook | `⌃⌘O` | 复制真实文件并打开 Outlook | 否 |
+| 资料清单 | `⌃⌘L` | 复制文件名和完整路径文字 | 否 |
+
+在 Cling 的 **Execute script** 面板中，也可以按单字母 `W`、`D`、`E`、`M`、`O` 或 `L`。
+
+### 安装稳定动作
+
+需要：
+
+- macOS 14 或更高版本；
+- 官方 [Cling 2.6.5](https://github.com/FuzzyIdeas/Cling/releases/tag/v2.6.5)；
+- 如果 Cling 对自定义 Scripts 有要求，需要 Pro 或仍有效的试用期；
+- 只需安装你实际使用的目标应用。
 
 ```bash
 git clone https://github.com/xffighting/maclist-actions.git
@@ -36,75 +58,93 @@ cd maclist-actions
 ./doctor.sh
 ```
 
-安装后重启 Cling。安装器会先核对 Cling 版本、Bundle ID、Developer ID 签名与 Team ID，异常时停止。
+安装后重启 Cling，按 **右 Command + /** 打开入口。安装器会先核对 Cling 版本、Bundle ID、Developer ID 签名和 Team ID，异常时停止。
 
-## 使用
-
-1. 按右 Command + / 打开 Cling。
-2. 搜索并选中一个或多个文件。
-3. 选择 Scripts 动作，或按 Control + Command + 对应字母。
-4. 在目标应用里选择聊天或新建邮件。
-5. 按 Command + V。
-6. 检查附件和对象后，由你亲自发送。
-
-## 安全边界
-
-本仓库脚本：
-
-- 不选择联系人或收件人；
-- 不自动粘贴，不点击发送；
-- 不读取文件正文；
-- 不包含网络客户端；
-- 写入的是真实 macOS 文件 URL，不是路径文字；
-- 将回滚状态保存在权限为 0700 的本机目录；
-- 会备份同名脚本、六项偏好和 Scripts 目录原权限。
-
-剪贴板里的文件 URL 会保留到下一次被覆盖。目标应用不存在时，文件仍可能已经进入剪贴板。
-
-以上承诺只适用于本仓库脚本，不代表 Cling、微信、钉钉或 Thunderbird 的全部行为。安装器会关闭 Cling 的 Sentry 偏好，但不会删除上游更新或授权组件。
-
-## 验证
+验证和卸载：
 
 ```bash
 ./test.sh
 ./doctor.sh
 ./acceptance.sh /path/to/a/known/file
-```
-
-本机完整测试会临时覆盖剪贴板；CI 使用明确的无 UI 模式，不触碰剪贴板。
-
-## 卸载
-
-```bash
 ./uninstall.sh
 ```
 
-卸载会恢复安装前的同名脚本、偏好和 Scripts 目录权限，不删除 Cling 或搜索索引。从未安装时运行卸载脚本会安全退出，不做任何修改。
+本机完整测试会临时覆盖剪贴板，CI 使用无 UI 模式。卸载会恢复安装前记录的同名脚本、六项偏好和 Scripts 目录权限，不删除 Cling 或其搜索索引。
+
+## 预览路线：Standalone Core
+
+[`standalone/`](../standalone/) 是不依赖 Cling 的 Swift 文件名和路径搜索底座。它只索引你通过 `--root` 明确传入的目录，只在本机保存元数据，并提供确定性的模糊搜索。
+
+```bash
+cd standalone
+swift run maclist index --root "$HOME/Documents" --root "$HOME/Downloads"
+swift run maclist search "季度报价"
+swift run maclist doctor
+```
+
+它现在是供开发、测试和验证方向使用的 **CLI + Swift 库**，还没有菜单栏 App、全局快捷键、搜索窗口、实时文件更新、预览和动作联动。完整边界见 [Standalone Core 说明](../standalone/README.md)。
+
+## 隐私边界
+
+MacList 自有代码遵循以下边界：
+
+- 没有文件上传、遥测客户端、账号或 API Key；
+- 动作脚本和独立索引器都不读取文件正文；
+- 独立核心只扫描用户明确传入的根目录；
+- 独立核心默认跳过隐藏项、包内容和符号链接；
+- 附件交接写入的是原生文件 URL，不是路径文字；
+- 不自动选择联系人、聊天、草稿，不执行粘贴和发送；
+- 自有私密状态使用受限的本机文件权限。
+
+剪贴板中的文件 URL 会保留到下一次被覆盖；即使目标应用不存在，所选文件也可能已经进入剪贴板。Cling 和微信、钉钉、邮件客户端等第三方软件有自己的行为与隐私政策，本页承诺只覆盖 MacList 自有代码。
+
+## 为什么保留两条路线
+
+稳定动作层先解决“已经找到了，怎么快速复用”的现实问题；独立核心则从明确授权目录和纯本地元数据开始，为未来原生搜索应用建立可验证的基础。分开标注，可以现在交付真实价值，也不会把尚未完成的 CLI 包装成完整桌面产品。
+
+## 项目地图
+
+| 位置 | 内容 |
+|---|---|
+| `scripts/` | 稳定的 Cling 文件交接动作与原生剪贴板助手 |
+| `standalone/` | 开发者预览版 Swift 搜索核心和 CLI |
+| `tools/` | 可重复生成的演示素材与媒体隐私检查 |
+| [项目 Dashboard](https://xffighting.github.io/maclist-actions/project-dashboard.html) | 可交互查看项目状态、任务、时间线与决策 |
+| [ACCEPTANCE.md](../ACCEPTANCE.md) | 验收证据与产品边界 |
+| [COMPLIANCE.md](../COMPLIANCE.md) | 分发范围与上游隔离说明 |
+
+演示 GIF 全部使用合成文件名，没有录制真实桌面、账号、收件人或本机私密路径。
 
 ## 常见问题
 
-### 这是独立的“Mac 版 Listary”吗？
+### 这是完整的“Mac 版 Listary”吗？
 
-目前不是。v0.1 依赖 Cling 提供全局入口、文件索引、搜索和结果选择，本项目只提供动作层。
+不是。稳定路线仍由 Cling 提供全局入口、索引、搜索、预览和结果选择；独立路线目前只是 CLI/Swift 库开发者预览。
 
-### 会不会上传或自动发送文件？
+### 会上传或自动发送文件吗？
 
-本仓库脚本不会。它只把本地文件 URL 放入剪贴板并打开目标应用。粘贴、确认和发送都由用户完成。
-
-### 为什么搜不到受保护目录？
-
-这由 Cling 搜索范围和 macOS 权限决定。只有在确实需要搜索 Mail 等受保护位置时，才考虑授予完整磁盘访问权限。
+MacList 自有代码不会。稳定动作只把本地文件 URL 放入剪贴板并打开目标应用；你自己选择对象、粘贴、检查和发送。
 
 ### 为什么不直接发布修改版 Cling？
 
-Cling v2.6.5 的公开工程含本地 WarpDrop 引用，以及尚未完成下游源码和许可证闭环的依赖或二进制。因此本仓库只发布自有动作层，并引导用户安装官方 Cling。
+Cling v2.6.5 的公开工程含本地 WarpDrop 引用，以及尚未完成下游源码和许可证闭环的依赖或二进制。因此本仓库只发布自有代码，并引导用户安装官方 Cling。
 
 ### 支持 Windows 吗？
 
-当前不支持。实现使用了 AppKit 剪贴板、JXA 和 macOS 的 open 命令。
+当前不支持。稳定动作使用 macOS AppKit 剪贴板、JXA 和 `open`；独立 Swift 包也以 macOS 为目标。
+
+## 下一步
+
+- [ ] 把独立核心装进签名的原生 Mac 搜索窗口；
+- [ ] 增加用户可见的授权目录管理和可选实时更新；
+- [ ] 在不自动发送的前提下连接搜索结果与现有交接动作；
+- [ ] 增加快捷键配置和冲突检查；
+- [ ] macOS 工作流稳定后，再研究 Windows 适配。
 
 ## 参与贡献
 
-阅读 [CONTRIBUTING.md](../CONTRIBUTING.md)。每个新动作都必须说明目标应用、快捷键、联网和内容读取情况、是否可能粘贴或发送，以及回滚方式。
+阅读 [CONTRIBUTING.md](../CONTRIBUTING.md)。每个新动作都必须写清目标应用、快捷键、联网和正文读取情况、是否可能粘贴或发送，以及回滚方式。
 
-如果它确实减少了你的 Finder 拖拽步骤，可以点一个 Star，让更多 Mac 用户找到它。
+MacList 自有代码采用 MIT 许可证。Cling 是单独的 GPL-3.0 项目，本仓库不包含它，也不隶属于 FuzzyIdeas、The Low-Tech Guys、腾讯、钉钉、Mozilla、Microsoft、Apple 或 Listary。
+
+如果它确实少让你拖拽一次 Finder 文件，可以点一个 Star，让更多 Mac 用户找到它。

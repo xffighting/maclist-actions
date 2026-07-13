@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>MacList Actions · Project Dashboard</title>
+  <style>
+    :root {
+      --canvas: #f2f2f7;
+      --window: #ffffff;
+      --sidebar: #f6f6f8;
+      --surface: #ffffff;
+      --surface-muted: #f7f7f9;
+      --line: rgba(60, 60, 67, .16);
+      --line-strong: rgba(60, 60, 67, .28);
+      --text: #1d1d1f;
+      --secondary: #6e6e73;
+      --tertiary: #737378;
+      --blue: #0068d9;
+      --blue-soft: #e8f2ff;
+      --amber: #ff9f0a;
+      --green: #34c759;
+      --red: #ff3b30;
+      --shadow: 0 24px 70px rgba(0, 0, 0, .12), 0 2px 10px rgba(0, 0, 0, .06);
+      --radius-window: 20px;
+      --radius-card: 14px;
+      --sidebar-width: 224px;
+      --detail-width: 310px;
+      --transition: 160ms ease;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--canvas); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background: var(--canvas);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 3px solid rgba(0, 104, 217, .32); outline-offset: 2px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .skip-link { position: fixed; z-index: 100; top: 10px; left: 10px; padding: 10px 14px; border-radius: 9px; background: var(--blue); color: #fff; font-weight: 650; transform: translateY(-160%); transition: transform var(--transition); }
+    .skip-link:focus { transform: translateY(0); text-decoration: none; }
+
+    .desktop { padding: 28px; min-height: 100vh; display: grid; place-items: center; }
+    .window {
+      width: min(1480px, 100%);
+      height: min(900px, calc(100vh - 56px));
+      min-height: 680px;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 54px minmax(0, 1fr);
+      border: 1px solid rgba(0, 0, 0, .12);
+      border-radius: var(--radius-window);
+      background: var(--window);
+      box-shadow: var(--shadow);
+    }
+
+    .titlebar {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(320px, 1fr) var(--detail-width);
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: #fafafc;
+      user-select: none;
+    }
+    .traffic { display: flex; gap: 8px; align-items: center; padding-left: 18px; }
+    .traffic span { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .1); }
+    .traffic .close { background: #ff5f57; }
+    .traffic .minimize { background: #febc2e; }
+    .traffic .zoom { background: #28c840; }
+    .project-title { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 18px; }
+    .project-name { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+    .project-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
+    .project-name span { color: var(--secondary); font-size: 12px; white-space: nowrap; }
+    .search { position: relative; width: min(320px, 42%); }
+    .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; color: var(--tertiary); }
+    .search input { width: 100%; height: 36px; padding: 0 30px; border: 1px solid transparent; border-radius: 8px; background: rgba(118, 118, 128, .12); color: var(--text); }
+    .search input::placeholder { color: var(--tertiary); }
+    .search input:focus { border-color: rgba(0, 122, 255, .35); background: var(--surface); }
+    .search kbd { position: absolute; right: 8px; top: 9px; border: 0; color: var(--tertiary); font: 11px/18px ui-monospace, "SFMono-Regular", monospace; }
+    .title-actions { height: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-right: 14px; border-left: 1px solid var(--line); }
+    .status-pill { display: inline-flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 12px; }
+    .status-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px rgba(255, 159, 10, .12); }
+    .icon-button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; cursor: pointer; transition: background var(--transition); }
+    .icon-button:hover { background: rgba(118, 118, 128, .12); }
+    .icon-button svg { width: 17px; height: 17px; }
+
+    .workspace { min-height: 0; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--detail-width); }
+    .sidebar { min-height: 0; padding: 14px 10px; overflow-y: auto; border-right: 1px solid var(--line); background: var(--sidebar); }
+    .sidebar-section + .sidebar-section { margin-top: 22px; }
+    .sidebar-label { margin: 0 10px 7px; color: var(--tertiary); font-size: 11px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; }
+    .nav-item { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; transition: background var(--transition); }
+    .nav-item:hover { background: rgba(118, 118, 128, .1); }
+    .nav-item[aria-current="page"] { background: rgba(0, 122, 255, .12); color: #005ecb; font-weight: 600; }
+    .nav-icon { width: 18px; height: 18px; display: grid; place-items: center; color: var(--secondary); }
+    .nav-item[aria-current="page"] .nav-icon { color: var(--blue); }
+    .nav-icon svg { width: 16px; height: 16px; }
+    .nav-count { margin-left: auto; color: var(--tertiary); font-size: 12px; }
+    .progress-card { margin: 10px 6px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, .68); }
+    .progress-head { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--secondary); font-size: 12px; }
+    .progress-track { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(118, 118, 128, .16); }
+    .progress-track span { display: block; width: 72%; height: 100%; border-radius: inherit; background: var(--blue); }
+    .sidebar-footer { margin: 20px 10px 0; color: var(--tertiary); font-size: 11px; }
+
+    .main { min-width: 0; min-height: 0; overflow-y: auto; background: #ffffff; }
+    .page { display: none; padding: 36px clamp(26px, 4vw, 54px) 60px; animation: fade-in var(--transition); }
+    .page.active { display: block; }
+    @keyframes fade-in { from { opacity: .92; transform: translateY(1px); } to { opacity: 1; transform: none; } }
+    .page-heading { margin-bottom: 28px; }
+    .page-heading .overline { margin-bottom: 8px; color: var(--blue); font-size: 12px; font-weight: 650; }
+    .page-heading h1 { max-width: 820px; margin: 0; font-size: clamp(34px, 4vw, 54px); line-height: 1.06; letter-spacing: -.038em; font-weight: 700; }
+    .page-heading p { max-width: 720px; margin: 14px 0 0; color: var(--secondary); font-size: 17px; line-height: 1.55; }
+
+    .summary-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .03); }
+    .summary-card strong { display: block; margin-bottom: 8px; font-size: 18px; }
+    .summary-card p { margin: 0; color: var(--secondary); }
+    .summary-card .primary-action { margin-top: 18px; }
+    .primary-action { min-height: 40px; padding: 8px 14px; border: 0; border-radius: 9px; background: var(--blue); color: white; font-weight: 600; cursor: pointer; }
+    .primary-action:hover { background: #005bbf; }
+    .secondary-action { min-height: 40px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--text); cursor: pointer; }
+    .secondary-action:hover { background: var(--surface-muted); }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin: 18px 0 28px; }
+    .metric { min-height: 112px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); cursor: pointer; text-align: left; transition: transform var(--transition), box-shadow var(--transition); }
+    .metric:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0, 0, 0, .06); }
+    .metric b { display: block; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .metric span { display: block; margin-top: 12px; color: var(--secondary); font-size: 12px; }
+    .metric small { display: block; margin-top: 3px; color: var(--tertiary); font-size: 11px; }
+
+    .section-title { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 28px 0 12px; }
+    .section-title h2 { margin: 0; font-size: 20px; letter-spacing: -.015em; }
+    .section-title span { color: var(--tertiary); font-size: 12px; }
+    .list { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+    .row { width: 100%; min-height: 64px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 11px 15px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+    .row:last-child { border-bottom: 0; }
+    .row:hover { background: var(--surface-muted); }
+    .row-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: var(--blue-soft); color: var(--blue); }
+    .row-icon svg { width: 17px; height: 17px; }
+    .row-copy { min-width: 0; }
+    .row-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .row-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; color: var(--secondary); font-size: 12px; }
+    .row-state { display: flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 12px; white-space: nowrap; }
+    .state-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tertiary); }
+    .state-dot.done { background: var(--green); }
+    .state-dot.active { background: var(--amber); }
+    .state-dot.watch { background: var(--red); }
+    .chevron { width: 14px; color: var(--tertiary); }
+
+    .task-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .filter { min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--secondary); cursor: pointer; }
+    .filter.active { border-color: rgba(0, 122, 255, .35); background: var(--blue-soft); color: #005ecb; font-weight: 600; }
+    .task-card { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 14px; padding: 17px 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); cursor: pointer; }
+    .task-card + .task-card { margin-top: 10px; }
+    .task-card:hover { border-color: var(--line-strong); }
+    .task-accent { border-radius: 999px; background: var(--tertiary); }
+    .task-card[data-state="done"] .task-accent { background: var(--green); }
+    .task-card[data-state="active"] .task-accent { background: var(--amber); }
+    .task-card[data-state="watch"] .task-accent { background: var(--red); }
+    .task-main strong { font-size: 15px; }
+    .task-main p { margin: 4px 0 0; color: var(--secondary); font-size: 13px; }
+    .task-meta { color: var(--tertiary); font-size: 12px; text-align: right; }
+
+    .timeline { position: relative; padding-left: 28px; }
+    .timeline::before { content: ""; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 1px; background: var(--line-strong); }
+    .timeline-item { position: relative; padding: 0 0 28px 10px; }
+    .timeline-item[data-show-detail], .decision[data-show-detail] { cursor: pointer; }
+    .timeline-item:last-child { padding-bottom: 0; }
+    .timeline-item::before { content: ""; position: absolute; left: -25px; top: 5px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--surface); background: var(--green); box-shadow: 0 0 0 1px var(--line-strong); }
+    .timeline-item.active::before { background: var(--amber); }
+    .timeline-item.pending::before { background: var(--surface); }
+    .timeline-item time { color: var(--tertiary); font-size: 11px; }
+    .timeline-item h3 { margin: 3px 0 5px; font-size: 15px; }
+    .timeline-item p { margin: 0; color: var(--secondary); font-size: 13px; }
+
+    .knowledge-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .knowledge-card { min-height: 170px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); cursor: pointer; text-align: left; }
+    .knowledge-card:hover { border-color: var(--line-strong); box-shadow: 0 7px 18px rgba(0, 0, 0, .045); }
+    .knowledge-card .kicker { color: var(--blue); font-size: 11px; font-weight: 650; text-transform: uppercase; }
+    .knowledge-card h3 { margin: 8px 0; font-size: 17px; }
+    .knowledge-card p { margin: 0; color: var(--secondary); font-size: 13px; }
+    .knowledge-card .asset-count { display: block; margin-top: 18px; color: var(--tertiary); font-size: 11px; }
+
+    .decision { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+    .decision + .decision { margin-top: 12px; }
+    .decision.recommended { border-color: rgba(0, 122, 255, .32); box-shadow: inset 3px 0 0 var(--blue); }
+    .decision-head { display: flex; justify-content: space-between; gap: 16px; }
+    .decision h3 { margin: 0; font-size: 17px; }
+    .decision p { margin: 7px 0 0; color: var(--secondary); }
+    .decision-badge { align-self: start; padding: 3px 8px; border-radius: 999px; background: var(--blue-soft); color: #005ecb; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .decision-facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--secondary); font-size: 12px; }
+
+    .empty { display: none; padding: 30px; color: var(--secondary); text-align: center; }
+    .empty.visible { display: block; }
+    .global-empty { max-width: 430px; margin: 22vh auto 0; padding: 28px; color: var(--secondary); text-align: center; }
+    .global-empty strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 17px; }
+    .main.search-empty .page { display: none; }
+
+    .detail { min-width: 0; min-height: 0; overflow-y: auto; padding: 22px 20px; border-left: 1px solid var(--line); background: #fafafc; }
+    .detail-kicker { color: var(--tertiary); font-size: 11px; font-weight: 650; text-transform: uppercase; }
+    .detail h2 { margin: 8px 0 8px; font-size: 20px; letter-spacing: -.02em; }
+    .detail-summary { margin: 0; color: var(--secondary); font-size: 13px; }
+    .detail-rule { height: 1px; margin: 20px 0; background: var(--line); }
+    .detail h3 { margin: 0 0 9px; font-size: 12px; }
+    .detail-list { margin: 0; padding-left: 18px; color: var(--secondary); font-size: 12px; }
+    .detail-list li + li { margin-top: 8px; }
+    .detail-meta { display: grid; gap: 10px; }
+    .detail-meta div { display: flex; justify-content: space-between; gap: 12px; }
+    .detail-meta span { color: var(--tertiary); font-size: 11px; }
+    .detail-meta b { color: var(--secondary); font-size: 11px; text-align: right; }
+    .detail-actions { display: grid; gap: 8px; margin-top: 20px; }
+    #detail-close { display: none; }
+    .detail code { overflow-wrap: anywhere; font-family: ui-monospace, "SFMono-Regular", monospace; font-size: 11px; }
+
+    .settings-popover { position: fixed; z-index: 30; top: 72px; right: 42px; width: 220px; display: none; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, .98); box-shadow: 0 16px 40px rgba(0, 0, 0, .15); }
+    .settings-popover.open { display: block; }
+    .settings-popover strong { display: block; padding: 8px; font-size: 12px; }
+    .settings-option { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 8px; border: 0; border-radius: 7px; background: transparent; cursor: pointer; text-align: left; }
+    .settings-option:hover { background: var(--surface-muted); }
+    .settings-option[aria-checked="true"]::after { content: "✓"; color: var(--blue); font-weight: 700; }
+    body.compact .page { padding-top: 24px; }
+    body.compact .row { min-height: 52px; }
+    body.compact .task-card { padding-block: 12px; }
+
+    @media (max-width: 1120px) {
+      :root { --detail-width: 270px; --sidebar-width: 206px; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .knowledge-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 860px) {
+      .desktop { padding: 0; }
+      .window { width: 100%; height: 100vh; min-height: 620px; border: 0; border-radius: 0; box-shadow: none; }
+      .titlebar { grid-template-columns: 72px minmax(0, 1fr) 80px; }
+      .project-name span, .status-pill { display: none; }
+      .search { width: 46%; }
+      .workspace { grid-template-columns: 74px minmax(0, 1fr); }
+      .sidebar { padding-inline: 8px; }
+      .sidebar-label, .nav-item span:not(.nav-icon), .nav-count, .progress-card, .sidebar-footer { display: none; }
+      .nav-item { justify-content: center; padding: 7px; }
+      .detail { position: fixed; z-index: 20; top: 54px; right: 0; bottom: 0; width: min(330px, calc(100vw - 74px)); transform: translateX(102%); box-shadow: -14px 0 30px rgba(0, 0, 0, .12); transition: transform var(--transition); }
+      .detail.open { transform: translateX(0); }
+      .detail[aria-hidden="true"] { visibility: hidden; }
+      #detail-close { display: block; }
+    }
+    @media (max-width: 560px) {
+      .titlebar { grid-template-columns: 62px minmax(0, 1fr) 52px; }
+      .project-name { display: none; }
+      .search { width: 100%; }
+      .workspace { grid-template-columns: 58px minmax(0, 1fr); }
+      .page { padding: 26px 18px 48px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric { min-height: 98px; padding: 14px; }
+      .metric b { font-size: 26px; }
+      .task-card { grid-template-columns: 5px minmax(0, 1fr); }
+      .task-meta { display: none; }
+      .detail { width: calc(100vw - 58px); }
+      .search kbd { display: none; }
+    }
+    @media (pointer: coarse) {
+      .search input, .icon-button, .nav-item, .primary-action, .secondary-action, .filter, .settings-option { min-height: 44px; }
+      .icon-button { width: 44px; height: 44px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    @media print { .desktop { padding: 0; } .window { height: auto; box-shadow: none; } .sidebar, .detail, .titlebar { display: none; } .workspace { display: block; } .main { overflow: visible; } .page { display: block !important; break-after: page; } }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="desktop">
+    <section class="window" aria-label="MacList Actions project dashboard">
+      <header class="titlebar">
+        <div class="traffic" aria-hidden="true"><span class="close"></span><span class="minimize"></span><span class="zoom"></span></div>
+        <div class="project-title">
+          <div class="project-name"><strong>MacList Actions</strong><span>v0.2.0 · 2026-07-13</span></div>
+          <label class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+            <input id="global-search" type="search" placeholder="搜索任务、知识和决策" autocomplete="off" aria-label="快速搜索 Dashboard" aria-describedby="search-status">
+            <kbd aria-hidden="true">⌘K</kbd>
+          </label>
+          <span class="sr-only" id="search-status" role="status" aria-live="polite"></span>
+        </div>
+        <div class="title-actions">
+          <span class="status-pill">Release Candidate</span>
+          <button class="icon-button" id="settings-button" type="button" aria-label="显示设置" aria-expanded="false" aria-controls="settings-popover">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.19.36.4.76.4 1.1V10h1v4h-.09a1.7 1.7 0 0 0-1.31 1Z"></path></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar" aria-label="项目导航">
+          <div class="sidebar-section">
+            <p class="sidebar-label">项目</p>
+            <button class="nav-item" type="button" data-page="executive" aria-current="page"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"></rect><rect x="14" y="3" width="7" height="7" rx="2"></rect><rect x="3" y="14" width="7" height="7" rx="2"></rect><rect x="14" y="14" width="7" height="7" rx="2"></rect></svg></span><span>总览</span></button>
+            <button class="nav-item" type="button" data-page="tasks"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"></path><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"></path></svg></span><span>任务流</span><span class="nav-count">6</span></button>
+            <button class="nav-item" type="button" data-page="timeline"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span><span>时间线</span></button>
+          </div>
+          <div class="sidebar-section">
+            <p class="sidebar-label">资产</p>
+            <button class="nav-item" type="button" data-page="knowledge"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg></span><span>知识资产</span><span class="nav-count">4</span></button>
+            <button class="nav-item" type="button" data-page="decisions"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"></path><circle cx="12" cy="12" r="9"></circle></svg></span><span>决策记录</span><span class="nav-count">3</span></button>
+          </div>
+          <div class="sidebar-section">
+            <p class="sidebar-label">发布进度</p>
+            <div class="progress-card"><div class="progress-head"><span>v0.2.0</span><b>72%</b></div><div class="progress-track"><span></span></div></div>
+          </div>
+          <div class="sidebar-footer">本地优先 · 人工发送<br>最后更新：2026-07-13</div>
+        </aside>
+
+        <main class="main" id="main-content" tabindex="-1">
+          <div class="global-empty" id="global-empty" role="status" hidden><strong>没有找到匹配内容</strong><span>换一个关键词，或按 Esc 清除搜索。</span></div>
+          <section class="page active" id="page-executive" data-page-panel="executive">
+            <header class="page-heading"><div class="overline">EXECUTIVE VIEW</div><h1>从“找到文件”到“交给正确应用”。</h1><p>今天用稳定动作层提速，明天用独立 Swift 搜索核心获得产品所有权。两条路径共享同一条安全原则：文件留在本机，发送留给人。</p></header>
+            <article class="summary-card searchable" data-search="结论 双轨 actions standalone swift 核心">
+              <strong>一句话结论</strong>
+              <p>v0.2.0 已把单一 Cling 动作包升级为可传播、可扩展、正在独立化的 Mac 文件工作流产品。</p>
+              <button class="primary-action" type="button" data-show-detail="strategy">查看推荐路径</button>
+            </article>
+            <div class="metrics" aria-label="关键数字">
+              <button class="metric searchable" type="button" data-search="6 文件交接动作" data-show-detail="actions"><b>6</b><span>文件交接动作</span><small>Mail 与 Outlook 已加入</small></button>
+              <button class="metric searchable" type="button" data-search="2 产品路径 双轨" data-show-detail="tracks"><b>2</b><span>产品运行路径</span><small>Stable + Developer Preview</small></button>
+              <button class="metric searchable" type="button" data-search="0 自动发送 安全" data-show-detail="safety"><b>0</b><span>自动发送动作</span><small>收件人与 Send 始终人工确认</small></button>
+              <button class="metric searchable" type="button" data-search="12 秒 演示 GIF 隐私" data-show-detail="media"><b>12s</b><span>合成演示</span><small>逐帧隐私审计</small></button>
+            </div>
+            <div class="section-title"><h2>下一步</h2><span>按风险排序</span></div>
+            <div class="list">
+              <button class="row searchable" type="button" data-search="QA 测试 Swift shell 媒体" data-show-detail="qa"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 12 2 2 4-4"></path><circle cx="12" cy="12" r="9"></circle></svg></span><span class="row-copy"><strong>完成统一 QA</strong><span>Shell 回滚、Swift Core、媒体隐私、发布包</span></span><span class="row-state"><span class="state-dot active"></span>进行中<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
+              <button class="row searchable" type="button" data-search="README 文档 v0.2 release" data-show-detail="release"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg></span><span class="row-copy"><strong>同步 README 并发布 v0.2.0</strong><span>双轨定位、GIF、Release、SHA-256 与 GitHub 回读</span></span><span class="row-state"><span class="state-dot active"></span>待执行<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
+              <button class="row searchable" type="button" data-search="Outlook 真机 复验 风险" data-show-detail="outlook"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg></span><span class="row-copy"><strong>保留 Outlook 真机复验项</strong><span>当前机器未安装 Outlook，不把静态测试冒充真实附件验收</span></span><span class="row-state"><span class="state-dot watch"></span>需复验<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
+            </div>
+          </section>
+
+          <section class="page" id="page-tasks" data-page-panel="tasks">
+            <header class="page-heading"><div class="overline">OPERATION VIEW</div><h1>任务流</h1><p>每个角色只保留一个清晰责任。筛选状态，点击任务，在右侧查看验收证据。</p></header>
+            <div class="task-toolbar" role="group" aria-label="按任务状态筛选"><button class="filter active" type="button" data-task-filter="all" aria-pressed="true">全部</button><button class="filter" type="button" data-task-filter="done" aria-pressed="false">已完成</button><button class="filter" type="button" data-task-filter="active" aria-pressed="false">进行中</button><button class="filter" type="button" data-task-filter="watch" aria-pressed="false">需复验</button></div>
+            <div id="task-list">
+              <button class="task-card searchable" type="button" data-state="done" data-search="Product Manager 范围 验收" data-show-detail="pm"><span class="task-accent"></span><span class="task-main"><strong>Product Manager · 冻结 v0.2 范围</strong><p>邮件动作 Stable，独立核心 Developer Preview，不夸大成熟度。</p></span><span class="task-meta">完成<br>6/6 门禁</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="Researcher Apple Microsoft GitHub 官方证据" data-show-detail="research"><span class="task-accent"></span><span class="task-main"><strong>Researcher · 官方证据核验</strong><p>Bundle ID、Social Preview 上传路径和本地优先边界已确认。</p></span><span class="task-meta">完成<br>Primary sources</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="Developer Mail Outlook 动作 回滚" data-show-detail="actions"><span class="task-accent"></span><span class="task-main"><strong>Developer · Mail / Outlook 动作</strong><p>新增两个 Bundle ID 动作，并覆盖升级与卸载恢复。</p></span><span class="task-meta">完成<br>⌃⌘M / ⌃⌘O</span></button>
+              <button class="task-card searchable" type="button" data-state="active" data-search="Architect Swift standalone 核心 CLI" data-show-detail="core"><span class="task-accent"></span><span class="task-main"><strong>Architect · 独立搜索核心</strong><p>显式授权根目录、元数据索引、模糊搜索和 JSON CLI 已落地。</p></span><span class="task-meta">进行中<br>等待独立 QA</span></button>
+              <button class="task-card searchable" type="button" data-state="active" data-search="QA 测试 CI release" data-show-detail="qa"><span class="task-accent"></span><span class="task-main"><strong>QA · 全链路验收</strong><p>验证 Shell、Swift、媒体、归档和 GitHub Actions。</p></span><span class="task-meta">进行中<br>Release gate</span></button>
+              <button class="task-card searchable" type="button" data-state="active" data-search="Knowledge Dashboard README Skill" data-show-detail="knowledge"><span class="task-accent"></span><span class="task-main"><strong>Knowledge Engineer · 长期资产</strong><p>Apple 风格 Dashboard、README、设计令牌与经验沉淀。</p></span><span class="task-meta">进行中<br>4 类资产</span></button>
+            </div>
+            <div class="empty" id="task-empty" role="status" aria-live="polite">没有符合当前筛选的任务。</div>
+          </section>
+
+          <section class="page" id="page-timeline" data-page-panel="timeline">
+            <header class="page-heading"><div class="overline">PROJECT LIFECYCLE</div><h1>从 Idea 到 Automation</h1><p>每一阶段记录目标、输入、输出和经验。点击节点查看交付证据。</p></header>
+            <div class="timeline">
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Idea 不是 history 是 Listary" data-show-detail="idea"><time>01 · IDEA</time><h3>纠正产品定义</h3><p>目标从“历史资料浏览”转为“快速找回文件并立即行动”。</p></article>
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Research Listary Cling GitHub" data-show-detail="research"><time>02 · RESEARCH</time><h3>对标 Listary、Cling 与高信任仓库</h3><p>确定本地原生、双轨演进和干净独立镜像策略。</p></article>
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Planning v0.2 stable preview" data-show-detail="pm"><time>03 · PLANNING</time><h3>冻结 v0.2 验收合同</h3><p>三项升级逐条映射到测试、文档和发布证据。</p></article>
+              <article class="timeline-item active searchable" role="button" tabindex="0" data-search="Execution Mail Outlook Swift GIF Dashboard" data-show-detail="execution"><time>04 · EXECUTION</time><h3>动作、核心、媒体与 Dashboard</h3><p>功能已基本落地，正在整合与独立验收。</p></article>
+              <article class="timeline-item pending searchable" role="button" tabindex="0" data-search="Review CI release QA" data-show-detail="qa"><time>05 · REVIEW</time><h3>Release Gate</h3><p>本地、CI、归档、下载与外部状态回读。</p></article>
+              <article class="timeline-item active searchable" role="button" tabindex="0" data-search="Knowledge Skill DESIGN Lessons" data-show-detail="knowledge"><time>06 · KNOWLEDGE ASSET</time><h3>把经验变成系统能力</h3><p>Skill、设计令牌、模板和验收合同同步沉淀。</p></article>
+              <article class="timeline-item pending searchable" role="button" tabindex="0" data-search="Automation CI render audit" data-show-detail="automation"><time>07 · AUTOMATION</time><h3>自动回归与发布</h3><p>CI 同时验证 Shell、Swift 和媒体隐私；Release 后自动复核。</p></article>
+            </div>
+          </section>
+
+          <section class="page" id="page-knowledge" data-page-panel="knowledge">
+            <header class="page-heading"><div class="overline">KNOWLEDGE VIEW</div><h1>知识资产</h1><p>能让下一次更快、更安全的内容才算资产。点击卡片查看使用方式。</p></header>
+            <div class="knowledge-grid">
+              <button class="knowledge-card searchable" type="button" data-search="Lessons Learned 经验 history list" data-show-detail="lessons"><span class="kicker">Lessons Learned</span><h3>从 history 偏差到 Listary 产品</h3><p>识别错误隐喻、动作层边界、媒体隐私和可选应用降级策略。</p><span class="asset-count">4 条核心经验</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Skill mac-listary-local-first-builder" data-show-detail="skill"><span class="kicker">Reusable Skill</span><h3>mac-listary-local-first-builder</h3><p>调研、架构、fork 门禁、本地优先、GitHub 发布和回读 playbook。</p><span class="asset-count">1 个持续进化 Skill</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Templates 动作 媒体 Release" data-show-detail="templates"><span class="kicker">Templates</span><h3>动作、媒体与 Release 模板</h3><p>新动作清单、1280×640 封面、12 秒 GIF 和版本化发布门禁。</p><span class="asset-count">3 套模板</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Automation CI render audit" data-show-detail="automation"><span class="kicker">Automation</span><h3>可重复验收工具链</h3><p>媒体重建、Vision 逐帧审计、Shell 回滚和 Swift 核心测试。</p><span class="asset-count">4 条自动化链路</span></button>
+            </div>
+          </section>
+
+          <section class="page" id="page-decisions" data-page-panel="decisions">
+            <header class="page-heading"><div class="overline">DECISION VIEW</div><h1>决策记录</h1><p>保留为什么这样做，避免未来团队重复争论已经验证过的问题。</p></header>
+            <article class="decision recommended searchable" role="button" tabindex="0" data-search="双轨 Actions Standalone 推荐" data-show-detail="strategy"><div class="decision-head"><h3>双轨演进：Actions 负责今天，Standalone 负责未来</h3><span class="decision-badge">推荐</span></div><p>保留立即可用的动作价值，同时逐步获得搜索索引与原生产品所有权。</p><div class="decision-facts"><span>立即可用：高</span><span>无 Cling 依赖：逐步</span><span>维护成本：中</span></div></article>
+            <article class="decision searchable" role="button" tabindex="0" data-search="不做 Skill 产品" data-show-detail="skill-decision"><div class="decision-head"><h3>Skill 作为开发与验收手册，不作为最终产品</h3></div><p>Skill 无法提供后台索引、全局热键、原生结果窗、拖拽和 Quick Switch。</p><div class="decision-facts"><span>用户价值：辅助</span><span>产品形态：否</span><span>复用价值：高</span></div></article>
+            <article class="decision searchable" role="button" tabindex="0" data-search="不发布 Cling fork 合规" data-show-detail="distribution"><div class="decision-head"><h3>只发布自有层，不发布污染父仓库与不完整二进制</h3></div><p>GPL 对应源码、私有依赖与历史身份无法完整闭环时，独立干净镜像更安全。</p><div class="decision-facts"><span>发布风险：低</span><span>可追溯性：高</span><span>回滚：清晰</span></div></article>
+          </section>
+        </main>
+
+        <aside class="detail" id="detail-panel" aria-labelledby="detail-title" aria-live="polite" tabindex="-1">
+          <div class="detail-kicker" id="detail-kicker">RECOMMENDED PATH</div>
+          <h2 id="detail-title">双轨演进</h2>
+          <p class="detail-summary" id="detail-summary">短期不牺牲效率，长期不放弃产品所有权。</p>
+          <div class="detail-rule"></div>
+          <h3>验收证据</h3>
+          <ul class="detail-list" id="detail-list"><li>动作层维持稳定回滚合同</li><li>独立核心不依赖 Cling</li><li>两个入口在 README 中明确分级</li></ul>
+          <div class="detail-rule"></div>
+          <div class="detail-meta"><div><span>状态</span><b id="detail-status">推荐</b></div><div><span>负责人</span><b id="detail-owner">Product + Architecture</b></div><div><span>下一门禁</span><b id="detail-gate">v0.2.0 Release</b></div></div>
+          <div class="detail-actions"><button class="primary-action" id="detail-primary" type="button">打开任务流</button><button class="secondary-action" id="detail-close" type="button">收起详情</button></div>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <div class="settings-popover" id="settings-popover" role="dialog" aria-labelledby="settings-title">
+    <strong id="settings-title">显示密度</strong>
+    <div role="radiogroup" aria-labelledby="settings-title">
+      <button class="settings-option" type="button" role="radio" data-density="comfortable" aria-checked="true" tabindex="0">舒适</button>
+      <button class="settings-option" type="button" role="radio" data-density="compact" aria-checked="false" tabindex="-1">紧凑</button>
+    </div>
+  </div>
+
+  <script>
+    const detailData = {
+      strategy: { kicker: 'RECOMMENDED PATH', title: '双轨演进', summary: '短期不牺牲效率，长期不放弃产品所有权。', items: ['动作层维持稳定回滚合同', '独立核心不依赖 Cling', '两个入口在 README 中明确分级'], status: '推荐', owner: 'Product + Architecture', gate: 'v0.2.0 Release', page: 'tasks' },
+      actions: { kicker: 'STABLE TRACK', title: '6 个文件交接动作', summary: '微信、钉钉、Thunderbird、Apple Mail、Outlook 与资料清单。', items: ['写入原生 file URL', '只打开目标应用', '不选择收件人、不粘贴、不发送'], status: '已实现', owner: 'Developer', gate: 'Shell regression tests', page: 'tasks' },
+      tracks: { kicker: 'PRODUCT SHAPE', title: '两条产品路径', summary: 'Actions 是稳定层，Standalone Core 是开发者预览。', items: ['Stable：立即可用的文件交接', 'Preview：无 Cling 的本地索引与搜索', '共享隐私、安全与人工确认原则'], status: '已冻结', owner: 'Product Manager', gate: 'README 分级', page: 'decisions' },
+      safety: { kicker: 'SAFETY MODEL', title: '零自动发送', summary: '应用打开以后，收件人、粘贴、检查与 Send 都由用户完成。', items: ['无 System Events 或 keystroke', '无收件人、主题或正文写入', '无网络客户端'], status: '门禁通过', owner: 'Security + QA', gate: 'Static scan', page: 'tasks' },
+      media: { kicker: 'PRIVACY-SAFE MEDIA', title: '12 秒合成演示', summary: '没有捕获真实桌面、账户、联系人或本机路径。', items: ['960×540 GIF，12 秒', '1280×640 Social Preview', 'macOS Vision 检查所有 GIF 帧'], status: '已生成', owner: 'Demo Producer', gate: 'GitHub 上传回读', page: 'knowledge' },
+      qa: { kicker: 'RELEASE GATE', title: '统一 QA', summary: '通过当前代码、归档和外部状态证明，而不是靠“应该没问题”。', items: ['MACLIST_TEST_NO_UI=1 ./test.sh', 'cd standalone && swift test', '媒体逐帧审计与 ZIP SHA-256'], status: '进行中', owner: 'QA', gate: 'CI + Release readback', page: 'tasks' },
+      release: { kicker: 'DELIVERY', title: 'v0.2.0 发布', summary: 'README、tag、Release、资产和 GitHub 外部状态必须一致。', items: ['英文主 README + 中文指南', 'main 与 v0.2.0 CI', 'Release ZIP 与 SHA-256'], status: '待执行', owner: 'Release Manager', gate: 'GitHub readback', page: 'timeline' },
+      outlook: { kicker: 'WATCH ITEM', title: 'Outlook 真机复验', summary: '当前机器未安装 Outlook，因此不把静态安全检查写成真实附件验收。', items: ['Bundle ID 已由官方信息核验', '缺失应用行为已测试', '需在已安装 Outlook 的 Mac 上粘贴复验'], status: '需复验', owner: 'QA', gate: 'Outlook device', page: 'tasks' },
+      pm: { kicker: 'PRODUCT MANAGER', title: 'v0.2 范围合同', summary: '“全部”映射为三个明确升级，不扩大成完整 Listary 重写。', items: ['邮件动作：Stable', '独立核心：Developer Preview', '媒体与 Dashboard：可验证资产'], status: '完成', owner: 'Product Manager', gate: 'No scope drift', page: 'timeline' },
+      research: { kicker: 'RESEARCH', title: '官方证据核验', summary: '优先使用 Apple、Microsoft、GitHub 与 SQLite 的一手来源。', items: ['com.apple.mail', 'com.microsoft.Outlook', 'Social Preview 只能经网页上传'], status: '完成', owner: 'Researcher', gate: 'Source links', page: 'timeline' },
+      core: { kicker: 'DEVELOPER PREVIEW', title: '独立 Swift 搜索核心', summary: '显式授权目录，索引文件元数据，提供确定性模糊搜索与 JSON CLI。', items: ['跳过隐藏项与符号链接', '状态目录 0700，索引文件 0600', '支持中文短查询和拼音式子序列匹配'], status: '等待 QA', owner: 'Architect', gate: 'swift test + smoke', page: 'tasks' },
+      knowledge: { kicker: 'KNOWLEDGE ENGINEER', title: '长期知识资产', summary: '交付不止代码，还包括经验、模板、设计令牌和自动化门禁。', items: ['Lessons Learned', 'mac-listary-local-first-builder', 'DESIGN.md 与发布模板'], status: '进行中', owner: 'Knowledge Engineer', gate: 'Documentation audit', page: 'knowledge' },
+      idea: { kicker: 'IDEA', title: '不是 history，是 Listary 式动作', summary: '核心工作是快速找回文件并立即执行，而不是浏览历史记录。', items: ['全局入口', '文件名/路径搜索', '打开、预览、复制、交接'], status: '完成', owner: 'Product', gate: 'Product contract', page: 'decisions' },
+      execution: { kicker: 'EXECUTION', title: '四条实现线合流', summary: '动作、核心、媒体和 Dashboard 在同一 v0.2 发布门禁下合并。', items: ['Apple Mail / Outlook', 'Standalone MacListCore', 'GIF / Social Preview', 'Apple 风格 Dashboard'], status: '进行中', owner: 'Developer Team', gate: 'Integration QA', page: 'tasks' },
+      automation: { kicker: 'AUTOMATION', title: '可重复回归', summary: '让后续版本自动证明安全边界没有被破坏。', items: ['Shell 安装与回滚测试', 'Swift Package tests', 'Vision 媒体隐私审计'], status: '待接入 CI', owner: 'QA + Knowledge', gate: 'Green workflow', page: 'timeline' },
+      lessons: { kicker: 'LESSONS LEARNED', title: '四条核心经验', summary: '定义、架构、隐私和发布边界都已转成可复用判断。', items: ['先纠正产品隐喻', 'Skill 不能替代原生索引', '传播素材只用合成数据', '可选应用缺失只警告'], status: '已沉淀', owner: 'Knowledge Engineer', gate: 'Skill reuse', page: 'knowledge' },
+      skill: { kicker: 'REUSABLE SKILL', title: 'mac-listary-local-first-builder', summary: '将调研、fork 门禁、架构选择、隐私、安全与 GitHub 发布串成标准流程。', items: ['候选项目证据化对比', 'Public GitHub Release Gate', '独立镜像与外部回读'], status: '可复用', owner: 'Knowledge Engineer', gate: 'Validator', page: 'knowledge' },
+      templates: { kicker: 'TEMPLATES', title: '三套模板', summary: '动作、媒体和 Release 都有固定输入、输出和门禁。', items: ['五分钟动作模板', '12 秒合成媒体模板', 'Release + SHA-256 模板'], status: '已生成', owner: 'Knowledge Engineer', gate: 'Next use', page: 'knowledge' },
+      'skill-decision': { kicker: 'DECISION', title: 'Skill 不是最终产品', summary: 'Skill 负责研究、配置和验收；用户真正使用的是低延迟桌面软件。', items: ['无后台常驻索引', '无全局结果窗', '无拖拽与 Quick Switch'], status: '已决定', owner: 'Product + Architecture', gate: 'Standalone UI', page: 'decisions' },
+      distribution: { kicker: 'DISTRIBUTION', title: '独立干净镜像', summary: '只发布拥有明确权利与完整证据的自有层。', items: ['不发布 Cling 二进制', '不带私密路径或身份', '独立 main、tag、Release'], status: '已采用', owner: 'Release Manager', gate: 'Secret scan', page: 'decisions' }
+    }
+
+    const mainContent = document.getElementById('main-content')
+    const navItems = [...document.querySelectorAll('.nav-item[data-page]')]
+    const pages = [...document.querySelectorAll('[data-page-panel]')]
+    const showPage = name => {
+      navItems.forEach(item => {
+        if (item.dataset.page === name) item.setAttribute('aria-current', 'page')
+        else item.removeAttribute('aria-current')
+      })
+      pages.forEach(page => {
+        const active = page.dataset.pagePanel === name
+        page.classList.toggle('active', active)
+        page.hidden = !active
+      })
+      mainContent.scrollTop = 0
+    }
+    showPage('executive')
+
+    const detailPanel = document.getElementById('detail-panel')
+    const detailClose = document.getElementById('detail-close')
+    const detailMedia = window.matchMedia('(max-width: 860px)')
+    const detailTriggers = [...document.querySelectorAll('[data-show-detail]')]
+    let activeDetailTrigger = null
+    const syncDetailAccessibility = () => {
+      const hidden = detailMedia.matches && !detailPanel.classList.contains('open')
+      const hadFocus = detailPanel.contains(document.activeElement)
+      detailPanel.inert = hidden
+      if (hidden) detailPanel.setAttribute('aria-hidden', 'true')
+      else detailPanel.removeAttribute('aria-hidden')
+      if (hidden && hadFocus) {
+        const triggerIsVisible = activeDetailTrigger && !activeDetailTrigger.closest('[hidden]')
+        const returnTarget = triggerIsVisible ? activeDetailTrigger : navItems.find(item => item.getAttribute('aria-current') === 'page')
+        const focusTarget = returnTarget || navItems[0]
+        focusTarget.focus()
+      }
+    }
+    const closeDetail = (restoreFocus = true) => {
+      detailPanel.classList.remove('open')
+      detailTriggers.forEach(item => item.setAttribute('aria-expanded', 'false'))
+      syncDetailAccessibility()
+      if (restoreFocus && activeDetailTrigger) activeDetailTrigger.focus()
+    }
+    const showDetail = (key, trigger) => {
+      const data = detailData[key]
+      if (!data) return
+      activeDetailTrigger = trigger || activeDetailTrigger
+      document.getElementById('detail-kicker').textContent = data.kicker
+      document.getElementById('detail-title').textContent = data.title
+      document.getElementById('detail-summary').textContent = data.summary
+      const listItems = data.items.map(item => {
+        const listItem = document.createElement('li')
+        listItem.textContent = item
+        return listItem
+      })
+      document.getElementById('detail-list').replaceChildren(...listItems)
+      document.getElementById('detail-status').textContent = data.status
+      document.getElementById('detail-owner').textContent = data.owner
+      document.getElementById('detail-gate').textContent = data.gate
+      document.getElementById('detail-primary').dataset.targetPage = data.page
+      detailTriggers.forEach(item => item.setAttribute('aria-expanded', String(item === activeDetailTrigger)))
+      detailPanel.classList.add('open')
+      syncDetailAccessibility()
+      if (detailMedia.matches) {
+        detailPanel.scrollTop = 0
+        detailPanel.focus({ preventScroll: true })
+      }
+    }
+    detailTriggers.forEach(item => {
+      item.setAttribute('aria-controls', 'detail-panel')
+      item.setAttribute('aria-expanded', 'false')
+      item.addEventListener('click', () => showDetail(item.dataset.showDetail, item))
+      if (item.getAttribute('role') === 'button' && item.tagName !== 'BUTTON') {
+        item.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            showDetail(item.dataset.showDetail, item)
+          }
+        })
+      }
+    })
+    detailClose.addEventListener('click', () => closeDetail())
+    if (detailMedia.addEventListener) detailMedia.addEventListener('change', syncDetailAccessibility)
+    else detailMedia.addListener(syncDetailAccessibility)
+    syncDetailAccessibility()
+
+    const filters = [...document.querySelectorAll('[data-task-filter]')]
+    const tasks = [...document.querySelectorAll('.task-card')]
+    const searchable = [...document.querySelectorAll('.searchable')]
+    const searchInput = document.getElementById('global-search')
+    const searchStatus = document.getElementById('search-status')
+    const globalEmpty = document.getElementById('global-empty')
+    const taskEmpty = document.getElementById('task-empty')
+    let activeTaskFilter = 'all'
+    const refreshVisibility = (navigateToResult = true) => {
+      const query = searchInput.value.trim().toLocaleLowerCase()
+      const matches = []
+      searchable.forEach(item => {
+        const haystack = `${item.dataset.search || ''} ${item.textContent}`.toLocaleLowerCase()
+        const matchesSearch = !query || haystack.includes(query)
+        const matchesFilter = !item.classList.contains('task-card') || activeTaskFilter === 'all' || item.dataset.state === activeTaskFilter
+        item.hidden = !(matchesSearch && matchesFilter)
+        if (query && matchesSearch && matchesFilter) matches.push(item)
+      })
+      taskEmpty.classList.toggle('visible', tasks.every(task => task.hidden))
+      const noResults = Boolean(query) && matches.length === 0
+      mainContent.classList.toggle('search-empty', noResults)
+      globalEmpty.hidden = !noResults
+      searchStatus.textContent = query ? (matches.length ? `找到 ${matches.length} 项匹配内容` : '没有找到匹配内容') : ''
+      if (query && matches.length && navigateToResult) {
+        const activePage = pages.find(page => page.classList.contains('active'))
+        const activeHasMatch = matches.some(item => item.closest('[data-page-panel]') === activePage)
+        if (!activeHasMatch) showPage(matches[0].closest('[data-page-panel]').dataset.pagePanel)
+      }
+    }
+    const clearSearch = () => {
+      searchInput.value = ''
+      refreshVisibility(false)
+    }
+    const applyTaskFilter = state => {
+      activeTaskFilter = state
+      filters.forEach(filter => {
+        const active = filter.dataset.taskFilter === state
+        filter.classList.toggle('active', active)
+        filter.setAttribute('aria-pressed', String(active))
+      })
+      refreshVisibility(false)
+    }
+    filters.forEach(filter => filter.addEventListener('click', () => applyTaskFilter(filter.dataset.taskFilter)))
+    searchInput.addEventListener('input', () => refreshVisibility())
+    navItems.forEach(item => item.addEventListener('click', () => {
+      clearSearch()
+      showPage(item.dataset.page)
+    }))
+    document.getElementById('detail-primary').addEventListener('click', event => {
+      clearSearch()
+      showPage(event.currentTarget.dataset.targetPage || 'tasks')
+      if (detailMedia.matches) closeDetail(false)
+    })
+
+    const settingsButton = document.getElementById('settings-button')
+    const popover = document.getElementById('settings-popover')
+    const densityOptions = [...document.querySelectorAll('[data-density]')]
+    const closeSettings = restoreFocus => {
+      popover.classList.remove('open')
+      settingsButton.setAttribute('aria-expanded', 'false')
+      if (restoreFocus) settingsButton.focus()
+    }
+    const selectDensity = (option, shouldClose = true) => {
+      document.body.classList.toggle('compact', option.dataset.density === 'compact')
+      densityOptions.forEach(item => {
+        const selected = item === option
+        item.setAttribute('aria-checked', String(selected))
+        item.tabIndex = selected ? 0 : -1
+      })
+      if (shouldClose) closeSettings(true)
+    }
+    settingsButton.addEventListener('click', () => {
+      const open = !popover.classList.contains('open')
+      popover.classList.toggle('open', open)
+      settingsButton.setAttribute('aria-expanded', String(open))
+      if (open) densityOptions.find(item => item.getAttribute('aria-checked') === 'true').focus()
+    })
+    densityOptions.forEach((option, index) => {
+      option.addEventListener('click', () => selectDensity(option))
+      option.addEventListener('keydown', event => {
+        if (!['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].includes(event.key)) return
+        event.preventDefault()
+        const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1
+        const target = densityOptions[(index + direction + densityOptions.length) % densityOptions.length]
+        selectDensity(target, false)
+        target.focus()
+      })
+    })
+    document.addEventListener('keydown', event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        searchInput.focus()
+      }
+      if (event.key !== 'Escape') return
+      if (popover.classList.contains('open')) closeSettings(true)
+      else if (detailMedia.matches && detailPanel.classList.contains('open')) closeDetail()
+      else if (searchInput.value) { clearSearch(); searchInput.focus() }
+    })
+    document.addEventListener('click', event => {
+      if (!popover.contains(event.target) && !settingsButton.contains(event.target)) closeSettings(false)
+    })
+  </script>
+</body>
+</html>

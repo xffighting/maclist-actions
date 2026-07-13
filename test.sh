@@ -42,6 +42,28 @@ for SCRIPT in "$ROOT"/scripts/*.zsh; do
   fi
 done
 
+KEY_COUNT="$(/usr/bin/grep -h '^# key:' "$ROOT"/scripts/*.zsh | /usr/bin/awk '{print $3}' | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+UNIQUE_KEY_COUNT="$(/usr/bin/grep -h '^# key:' "$ROOT"/scripts/*.zsh | /usr/bin/awk '{print $3}' | /usr/bin/sort -u | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+if [[ "$KEY_COUNT" == "$UNIQUE_KEY_COUNT" ]] &&
+   /usr/bin/grep -q '^# key: m$' "$ROOT/scripts/MacList - Apple Mail_复制文件并打开.zsh" &&
+   /usr/bin/grep -q '^# key: o$' "$ROOT/scripts/MacList - Outlook_复制文件并打开.zsh"; then
+  pass "action shortcuts are unique and mail shortcuts are registered"
+else
+  fail "action shortcuts are unique and mail shortcuts are registered"
+fi
+
+if /usr/bin/grep -Fq 'MacList-prepare-share.jxa' "$ROOT/scripts/MacList - Apple Mail_复制文件并打开.zsh" &&
+   /usr/bin/grep -Fq '/usr/bin/open -b com.apple.mail' "$ROOT/scripts/MacList - Apple Mail_复制文件并打开.zsh" &&
+   /usr/bin/grep -Fq 'MacList-prepare-share.jxa' "$ROOT/scripts/MacList - Outlook_复制文件并打开.zsh" &&
+   /usr/bin/grep -Fq '/usr/bin/open -b com.microsoft.Outlook' "$ROOT/scripts/MacList - Outlook_复制文件并打开.zsh" &&
+   ! /usr/bin/grep -Eiq 'System Events|keystroke|key code|mailto:|tell application|recipient|compose|paste|send' \
+     "$ROOT/scripts/MacList - Apple Mail_复制文件并打开.zsh" \
+     "$ROOT/scripts/MacList - Outlook_复制文件并打开.zsh"; then
+  pass "mail actions only copy file URLs and open their applications"
+else
+  fail "mail actions only copy file URLs and open their applications"
+fi
+
 if [[ "${MACLIST_TEST_NO_UI:-0}" == 1 ]]; then
   pass "UI clipboard checks skipped by explicit CI mode"
 else
@@ -116,6 +138,42 @@ else
   fail "sandbox install replaced the workflow"
 fi
 
+if [[ -x "$TEST_TARGET/MacList - Apple Mail_复制文件并打开.zsh" &&
+      -x "$TEST_TARGET/MacList - Outlook_复制文件并打开.zsh" ]]; then
+  pass "sandbox install added Apple Mail and Outlook workflows"
+else
+  fail "sandbox install added Apple Mail and Outlook workflows"
+fi
+
+if /usr/bin/grep -Fqx 'customization_version=0.2.0' "$TEST_STATE/active"; then
+  pass "install state records the v0.2.0 customization version"
+else
+  fail "install state records the v0.2.0 customization version"
+fi
+
+# Emulate an active pre-mail-actions installation, then verify an in-place
+# upgrade records the new files as originally absent for safe rollback.
+/usr/bin/awk -F '\t' '$1 != "MacList - Apple Mail_复制文件并打开.zsh" && $1 != "MacList - Outlook_复制文件并打开.zsh"' \
+  "$TEST_STATE/files.before.tsv" > "$TEST_STATE/files.before.next.tsv"
+/bin/mv "$TEST_STATE/files.before.next.tsv" "$TEST_STATE/files.before.tsv"
+/bin/chmod 600 "$TEST_STATE/files.before.tsv"
+/bin/rm -f \
+  "$TEST_TARGET/MacList - Apple Mail_复制文件并打开.zsh" \
+  "$TEST_TARGET/MacList - Outlook_复制文件并打开.zsh"
+
+MACLIST_SKIP_APP_CHECK=1 \
+MACLIST_TARGET_DIR="$TEST_TARGET" \
+MACLIST_STATE_DIR="$TEST_STATE" \
+MACLIST_PREF_DOMAIN="$PREF_DOMAIN" \
+  "$ROOT/install.sh" >/dev/null
+
+if /usr/bin/grep -Fqx $'MacList - Apple Mail_复制文件并打开.zsh\tabsent' "$TEST_STATE/files.before.tsv" &&
+   /usr/bin/grep -Fqx $'MacList - Outlook_复制文件并打开.zsh\tabsent' "$TEST_STATE/files.before.tsv"; then
+  pass "active upgrade extends the rollback snapshot for new workflows"
+else
+  fail "active upgrade extends the rollback snapshot for new workflows"
+fi
+
 MACLIST_SKIP_APP_CHECK=1 \
 MACLIST_TARGET_DIR="$TEST_TARGET" \
 MACLIST_STATE_DIR="$TEST_STATE" \
@@ -134,6 +192,13 @@ else
   pass "post-install edits stop overwrite"
 fi
 
+# Emulate the manifest shape produced by the previous installer during an
+# active upgrade: new files were listed in the manifest but not the snapshot.
+/usr/bin/awk -F '\t' '$1 != "MacList - Apple Mail_复制文件并打开.zsh" && $1 != "MacList - Outlook_复制文件并打开.zsh"' \
+  "$TEST_STATE/files.before.tsv" > "$TEST_STATE/files.before.next.tsv"
+/bin/mv "$TEST_STATE/files.before.next.tsv" "$TEST_STATE/files.before.tsv"
+/bin/chmod 600 "$TEST_STATE/files.before.tsv"
+
 MACLIST_TARGET_DIR="$TEST_TARGET" \
 MACLIST_STATE_DIR="$TEST_STATE" \
 MACLIST_PREF_DOMAIN="$PREF_DOMAIN" \
@@ -150,6 +215,14 @@ if [[ ! -e "$TEST_TARGET/MacList - 钉钉_复制文件并打开.zsh" ]]; then
   pass "uninstall removed newly added workflows"
 else
   fail "uninstall removed newly added workflows"
+fi
+
+
+if [[ ! -e "$TEST_TARGET/MacList - Apple Mail_复制文件并打开.zsh" &&
+      ! -e "$TEST_TARGET/MacList - Outlook_复制文件并打开.zsh" ]]; then
+  pass "uninstall removes workflows recorded only by a legacy upgrade manifest"
+else
+  fail "uninstall removes workflows recorded only by a legacy upgrade manifest"
 fi
 
 if [[ "$(/usr/bin/defaults read "$PREF_DOMAIN" honorGitignore 2>/dev/null)" == 0 &&
