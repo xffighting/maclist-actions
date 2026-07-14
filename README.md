@@ -3,180 +3,185 @@
 </p>
 
 <p align="center">
-  <strong>Recall the file. Hand it off. Keep control.</strong>
+  <strong>Search inside the file picker. Stay in the app.</strong>
 </p>
 
 <p align="center">
-  Local-first filename search and safe file handoff for macOS.
+  A local-first, Listary-inspired file picker companion for macOS.
 </p>
 
 <p align="center">
   <a href="https://github.com/xffighting/maclist-actions/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/xffighting/maclist-actions/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/xffighting/maclist-actions/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/xffighting/maclist-actions"></a>
-  <img alt="macOS" src="https://img.shields.io/badge/macOS-local--first-1d1d1f">
+  <img alt="Native Preview" src="https://img.shields.io/badge/status-native_preview-f5a623">
+  <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-1d1d1f">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-007aff"></a>
 </p>
 
 <p align="center">
-  <a href="#choose-a-track">Choose a track</a> ·
-  <a href="#privacy-boundary">Privacy</a> ·
-  <a href="https://xffighting.github.io/maclist-actions/project-dashboard.html">Project dashboard</a> ·
+  <a href="#the-flow">The flow</a> ·
+  <a href="#current-status">Status</a> ·
+  <a href="#privacy-and-safety">Privacy</a> ·
   <a href="docs/README.zh-CN.md">简体中文</a>
 </p>
 
-<p align="center">
-  <img src="docs/assets/maclist-demo.gif" width="800" alt="MacList demo using synthetic filenames to find files and prepare a safe handoff">
-</p>
-
 > [!IMPORTANT]
-> MacList v0.2.0 ships as two honest, separate tracks. **Cling Actions is the stable handoff layer. Standalone Core is a Developer Preview CLI/library, not a finished Listary replacement or signed Mac app.**
+> The native Mac app is an active developer preview. Its automatic dialog monitor, attached search UI, fuzzy search, and fail-safe selection bridge compile and pass headless tests. Real WeChat, Apple Mail, and Outlook regression is intentionally paused and is **not yet claimed as passed**.
 
-## Choose a track
+## The problem
 
-| Track | Status | Best for | Cling required? |
-|---|---|---|---:|
-| **Cling Actions** | **Stable** | Find files with Cling, copy native file attachments, and open a destination app | Yes; custom Scripts may require Cling Pro or a trial |
-| **Standalone Core** | **Developer Preview** | Build and test a private metadata index from explicitly authorized folders | No |
+You are already writing a message in WeChat or an email. You click **Upload File** or **Add Attachment**—and then lose time navigating folders, switching to Finder, or remembering where the file lives.
 
-The tracks share a product direction—make old files easy to recall and reuse—but they do not yet form one standalone GUI application.
+MacList is designed around that exact moment.
 
-## Stable track: Cling Actions
+## The flow
 
-Finding a document is often only half the job. MacList Actions removes the Finder-to-app drag while leaving the consequential steps to you:
+1. Click **Upload File** in WeChat, Mail, Outlook, or another Mac app.
+2. The system file picker appears.
+3. MacList detects it automatically and attaches a quiet search bar to that same window.
+4. Type a fuzzy filename, project name, or path fragment.
+5. Press Return; MacList locates and selects the exact file in the original picker. During the developer preview, you make the final **Open** confirmation yourself.
 
-1. open Cling and select one or more files;
-2. run a MacList action;
-3. MacList writes native file URLs to the pasteboard and opens the target app;
-4. you choose the chat or draft, press **Command + V**, review, and send.
+No launcher hotkey is required in the primary flow. No Finder window opens. MacList does not open or switch to the destination app—it stays attached to the picker you already invoked.
 
-No upload service. No automatic recipient selection. No automatic send.
+```mermaid
+flowchart LR
+    A["WeChat or Mail\nUpload File"] --> B["macOS file picker"]
+    B --> C["MacList auto-detects\nand attaches search"]
+    C --> D["Fuzzy match\nlocal metadata"]
+    D --> E["Exact file selected\nin the same picker"]
+```
 
-### Actions and shortcuts
+## Current status
 
-| Action | Shortcut | What it does | Sends automatically? |
-|---|---:|---|---:|
-| WeChat handoff | `⌃⌘W` | Copies real files and opens WeChat | No |
-| DingTalk handoff | `⌃⌘D` | Copies real files and opens DingTalk | No |
-| Thunderbird handoff | `⌃⌘E` | Copies real files and opens Thunderbird | No |
-| Apple Mail handoff | `⌃⌘M` | Copies real files and opens Apple Mail | No |
-| Microsoft Outlook handoff | `⌃⌘O` | Copies real files and opens Outlook | No |
-| Copy file checklist | `⌃⌘L` | Copies filenames and absolute paths as text | No |
+| Capability | Status | Evidence |
+|---|---|---|
+| Automatic file-window lifecycle monitor | Implemented, headless-verified | System-wide focus discovery separates host and dialog-owner PIDs; pure state tests and release build pass |
+| Attached, nonactivating search bar | Implemented | Geometry and lifecycle tests; no centered launcher path |
+| Chinese and English fuzzy filename search | Implemented | Framework-free smoke tests and XCTest suite |
+| Spotlight metadata lookup | Implemented | Filename, path, and time only; no document-body reads |
+| Exact file-picker handoff | Implemented with fail-safe | Preview selects and verifies the physical file, then leaves the final **Open** click to the user |
+| Standard `NSOpenPanel` live regression | Paused | Requires explicit permission to run visible UI testing |
+| WeChat / Apple Mail / Outlook live regression | Not yet verified | No compatibility claim until each app is tested |
+| Signed and notarized download | Not available yet | Native preview is built locally from source |
 
-Inside Cling's **Execute script** picker, the corresponding single-letter keys `W`, `D`, `E`, `M`, `O`, and `L` also work.
+The previous Cling action scripts and standalone CLI remain in this repository as historical prototypes. They are no longer the primary product flow.
 
-### Install the stable actions
+## Why this is a native app, not a Skill
+
+A Skill can explain, install, or validate a workflow. It cannot watch macOS window lifecycle events, display a nonactivating panel above another app, or safely control a system file picker. The core experience therefore belongs in a native Swift/AppKit menu bar app. A Skill may later provide setup and diagnostics around it.
+
+## Architecture
+
+```text
+MacListApp
+├── DialogProcessDiscovery   finds system focus and out-of-process panel owners
+├── FileDialogMonitor         observes host and real dialog-owner PIDs separately
+├── FileDialogDetector        scores focused, visible file-window evidence
+├── SearchPanelController     attaches a compact nonactivating search bar
+├── FileDialogBridge          returns an exact file to the original picker
+└── AccessibilityPermission  never bypasses macOS TCC
+
+MacListCore
+├── DialogObservation         pure monitor state machine and attachment layout
+├── SearchEngine              deterministic fuzzy ranking
+├── SpotlightProvider         local metadata candidates
+└── DialogSelectionPolicy     path validation and fail-safe bridge plan
+```
+
+The app uses public macOS Accessibility and Core Graphics APIs. Since macOS 10.15, Open panels are rendered out of process; Apple does not provide a public API for directly setting another app's `NSOpenPanel` URL. MacList therefore uses a narrow, permission-gated accessibility bridge and stops safely when the dialog cannot be verified.
+
+## Build and verify
 
 Requirements:
 
-- macOS 14 or newer;
-- official [Cling 2.6.5](https://github.com/FuzzyIdeas/Cling/releases/tag/v2.6.5), preferably in `/Applications`;
-- Cling Pro or an active trial if Cling requires it for custom Scripts;
-- only the destination apps you actually use.
+- macOS 13 or newer;
+- Swift 6 toolchain;
+- Accessibility and file-window control permission when the app is eventually run (not needed for headless core tests).
 
 ```bash
 git clone https://github.com/xffighting/maclist-actions.git
 cd maclist-actions
-./install.sh
-./doctor.sh
+./app/Scripts/verify.sh
 ```
 
-Restart Cling, press **Right Command + /**, select files, then run an action. The installer checks Cling's version, bundle identifier, Developer ID signature, and signing team before writing anything.
+The verification script runs framework-free core tests, runs XCTest when the local Xcode toolchain provides it, builds release binaries, creates an ad-hoc signed `MacList.app`, validates its property list, and checks its signature. It does not launch the UI.
 
-To verify or remove the customization:
+Useful focused commands:
 
 ```bash
-./test.sh
-./doctor.sh
-./acceptance.sh /path/to/a/known/file
-./uninstall.sh
+swift build --package-path app
+./app/Scripts/smoke-test.sh
+./app/Scripts/build-app.sh release
 ```
 
-The full local test temporarily replaces the pasteboard. CI uses an explicit no-UI mode. Uninstall restores snapshotted same-name scripts, six changed preferences, and the original Scripts-directory mode; it does not remove Cling or its index.
+Generated local artifacts are placed under `app/outputs/` and are intentionally ignored by Git.
 
-## Preview track: Standalone Core
+## Privacy and safety
 
-[`standalone/`](standalone/) is a dependency-free Swift package for filename and path recall without Cling. It only indexes folders supplied with `--root`, stores metadata locally, and supports deterministic fuzzy search from the command line.
+- No upload service, telemetry client, account, or API key.
+- No document-body reads; search uses filenames, paths, and timestamps.
+- No Finder launch, app switching, clipboard injection, AppleScript, recipient selection, or automatic Send.
+- The first launch uses the normal macOS Accessibility prompt; file-window control permission is exposed from the menu bar. MacList cannot bypass TCC.
+- The bridge validates that the target is a real file, rejects directories and missing paths, and uses bounded timeouts.
+- The current preview never presses the original picker's final button. It selects and reads back the exact physical file, then leaves confirmation under user control.
+- Save dialogs must never be auto-submitted or allowed to overwrite a file.
 
-```bash
-cd standalone
-swift run maclist index --root "$HOME/Documents" --root "$HOME/Downloads"
-swift run maclist search "quarter plan"
-swift run maclist doctor
-```
+## Research basis
 
-Today it is a **CLI and Swift library for development and validation**. It does not yet provide a menu bar app, global shortcut, search window, live filesystem updates, previews, or integrated handoff actions. See the [Standalone Core README](standalone/README.md) for its privacy contract and exact limitations.
+MacList takes product inspiration from [Listary Quick Save & Open](https://www.listary.com/feature/quick-save-and-open), while adapting the experience to macOS process and permission boundaries.
 
-## Privacy boundary
+Relevant open-source references were reviewed as behavioral and architectural evidence:
 
-MacList's own code is designed around a narrow local boundary:
+- [Cling](https://github.com/FuzzyIdeas/Cling) — strong local search UX and indexing ideas; GPL-3.0, so its code is not copied into this MIT app.
+- [Dialog Jumper](https://github.com/limars874/dialog-jumper-macos) — a small MIT experiment around macOS file-dialog detection and targeted path navigation.
+- [Peekaboo](https://github.com/openclaw/Peekaboo) — mature MIT accessibility automation patterns, especially re-resolving stale AX elements.
+- [LeaderKey](https://github.com/mikker/LeaderKey) — MIT reference for nonactivating AppKit panels.
 
-- no file upload, telemetry client, account, or API key;
-- no document-body reading in the action scripts or standalone indexer;
-- standalone indexing only inside roots explicitly passed by the user;
-- hidden entries, package descendants, and symbolic links are skipped by the standalone indexer;
-- native file URLs—not path text—are used for attachment handoff;
-- no contact, chat, draft, paste, or Send action is automated;
-- private app-owned state uses restrictive local permissions.
+See [the file-dialog flow specification](docs/FILE_DIALOG_FLOW_SPEC.md) for the exact boundary and release gate.
 
-The pasteboard keeps file URLs until another app replaces them. If a destination app is missing, the selected files may still already be on the pasteboard. Third-party software—including Cling and destination apps—has its own behavior and privacy policy; this repository's guarantees apply only to MacList code.
-
-## Why two tracks?
-
-The stable path solves the immediate “I found it—now let me reuse it” problem with a small, auditable layer on top of Cling. The preview path is the beginning of an independent search foundation with a stricter explicit-root model. Keeping the labels separate makes it possible to ship useful work now without presenting an unfinished CLI as a complete desktop product.
-
-## Project map
+## Repository map
 
 | Path | Purpose |
 |---|---|
-| `scripts/` | Stable Cling handoff actions and native pasteboard helper |
-| `standalone/` | Developer Preview Swift search core and CLI |
-| `tools/` | Deterministic demo renderer and media privacy audit |
-| [Project dashboard](https://xffighting.github.io/maclist-actions/project-dashboard.html) | Interactive macOS-style project status, tasks, timeline, and decisions |
-| [`ACCEPTANCE.md`](ACCEPTANCE.md) | Validation evidence and product boundary |
-| [`COMPLIANCE.md`](COMPLIANCE.md) | Distribution and upstream separation |
-
-The demo uses synthetic filenames and no captured desktop, account, recipient, or private path.
+| `app/` | Native Swift/AppKit preview and headless tests |
+| `docs/FILE_DIALOG_FLOW_SPEC.md` | Product flow, failures, and release criteria |
+| `standalone/` | Earlier local search CLI/core prototype |
+| `scripts/` | Earlier Cling action-layer prototype |
+| `tasks/` | Current implementation plan and verification checklist |
+| `COMPLIANCE.md` | Upstream and distribution boundaries |
 
 ## FAQ
 
 <details>
-<summary><strong>Is MacList a complete macOS Listary alternative?</strong></summary>
+<summary><strong>Does MacList appear automatically?</strong></summary>
 
-No. The stable track still uses Cling for its launcher, index, search, preview, and selection UI. The independent track is currently a CLI/library Developer Preview.
+That is the primary design. The native preview follows system-wide focus, discovers the real owner of an out-of-process file panel, and attaches when a high-confidence picker appears. It does not require `Option + Space`.
 </details>
 
 <details>
-<summary><strong>Does MacList upload or send my files?</strong></summary>
+<summary><strong>Is WeChat support finished?</strong></summary>
 
-MacList's own code does neither. The stable actions place local file URLs on the pasteboard and open another app. You choose the destination, paste, review, and send.
+Not yet. The automatic monitor has been implemented, but the redesigned flow has not been allowed to run a real WeChat UI regression. The README will not claim support until that test passes repeatedly.
 </details>
 
 <details>
-<summary><strong>Why not publish a modified Cling binary?</strong></summary>
+<summary><strong>Why does MacList need Accessibility permission?</strong></summary>
 
-The public Cling v2.6.5 project references a local WarpDrop package and includes dependencies or binary artifacts whose downstream source and licensing closure could not be independently verified. This repository ships only original code and points users to the official Cling release.
+macOS does not expose another app's `NSOpenPanel` object. Permission-gated Accessibility APIs are required to identify the picker, write the chosen path, and verify the selected file without switching apps or using the clipboard.
 </details>
 
 <details>
-<summary><strong>Does it support Windows?</strong></summary>
+<summary><strong>Does it read or upload my documents?</strong></summary>
 
-Not currently. The stable actions use macOS AppKit pasteboard types, JXA, and `open`; the standalone package targets macOS.
+No. MacList searches local metadata and does not contain a network upload path. The selected file is handed back to the file picker that you opened.
 </details>
-
-## Roadmap
-
-- [ ] Package the standalone core behind a signed native Mac search window.
-- [ ] Add opt-in filesystem event updates and a visible root-management UI.
-- [ ] Connect search results to the existing handoff actions without automating Send.
-- [ ] Add configurable shortcuts and conflict checks.
-- [ ] Research a Windows adapter after the macOS workflow is stable.
 
 ## Contributing
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). Every new action must declare its target app, shortcut, content and network behavior, paste/send boundary, and rollback behavior. Small local-first actions make good first issues.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). The most valuable contributions are reproducible, privacy-safe AX structure fixtures from different macOS versions and file pickers—never screenshots or paths containing personal data.
 
 ## Attribution and license
 
-MacList is MIT-licensed original code. [Cling](https://github.com/FuzzyIdeas/Cling) is a separate GPL-3.0 project and is not included. This project is not affiliated with FuzzyIdeas, The Low-Tech Guys, Tencent, DingTalk, Mozilla, Microsoft, Apple, or Listary. See [NOTICE.md](NOTICE.md) and [COMPLIANCE.md](COMPLIANCE.md).
+MacList is MIT-licensed original code. It is not affiliated with Apple, Listary, Tencent, Microsoft, FuzzyIdeas, or the referenced open-source projects. See [NOTICE.md](NOTICE.md) and [COMPLIANCE.md](COMPLIANCE.md).
 
-If this saves you from one more Finder-to-chat drag, consider starring the repository so another Mac user can find it.
+If this product moment resonates with you, consider starring the repository—but judge it by verified compatibility, not promises.

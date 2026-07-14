@@ -4,7 +4,7 @@
 
 ## 身份与范围
 
-- MacList Actions 包含独立脚本层，以及不依赖 Cling 的 Swift 搜索核心开发者预览；两者都不是 Cling 官方产品。
+- MacList 包含独立 Swift/AppKit 原生预览，以及早期脚本层和 Swift 搜索核心；三者都不是 Cling、Listary 或 Apple 官方产品。
 - 验证基线为 Cling 2.6.5、Bundle ID com.lowtechguys.Cling、签名 Team ID RDDXV84A73。
 - 定制层不修改、不重签 Cling.app。
 
@@ -12,6 +12,7 @@
 
 - 本仓库中的自有脚本、安装、卸载、检查工具和文档。
 - `standalone/` 中的自有 Swift 源码、测试和 CLI 文档。
+- `app/` 中的自有 Swift/AppKit 源码、无界面测试、构建脚本和文档；不包含 Apple 私有框架或第三方二进制。
 - 由 `tools/render_media.py` 使用合成文件名生成的 README 媒体。
 - 这些文件使用 LICENSE 中的 MIT 许可证。
 - 可以提供 Cling 官方发布页链接和独立安装说明。
@@ -40,5 +41,6 @@ Cling 升级后必须重新核对版本、Bundle ID、Team ID、签名、脚本�
 - 动作会覆盖剪贴板为真实文件 URL，并打开目标应用；目标应用不存在时，文件仍可能已进入剪贴板。
 - 脚本不自动选择收件人或聊天，不执行粘贴和发送。
 - 独立核心只扫描用户显式传入的根目录，只保存文件元数据，不复用 Cling 索引、偏好或进程。
+- 原生预览使用 Spotlight 元数据和用户授权的 Accessibility API；默认只在原文件面板中精确选中文件，不自动确认发送、保存或覆盖。
 - 安装器会写入六项 Cling 偏好并保护 Scripts 目录；卸载器依据安装前快照逐项恢复偏好、同名脚本和原目录权限。
 - 备份可能含用户原有同名脚本，只保存在权限为 0700 的本机状态目录，禁止对外打包。

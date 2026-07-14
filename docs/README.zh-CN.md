@@ -1,150 +1,129 @@
 # MacList
 
-**快速找回文件，交给目标应用；最后一步仍由你决定。**
+**就在文件上传窗口里搜索，不切应用。**
 
-[English](../README.md) · [项目 Dashboard](https://xffighting.github.io/maclist-actions/project-dashboard.html) · [最新版本](https://github.com/xffighting/maclist-actions/releases/latest)
-
-![MacList 使用合成文件名演示文件找回与安全交接](assets/maclist-demo.gif)
+[English](../README.md) · [流程规格](FILE_DIALOG_FLOW_SPEC.md) · [GitHub Actions](https://github.com/xffighting/maclist-actions/actions)
 
 > [!IMPORTANT]
-> MacList v0.2.0 有两条明确分开的路线：**Cling Actions 是稳定可用的文件交接层；Standalone Core 是开发者预览版 CLI/Swift 库，不是已经完成的“Mac 版 Listary”，也还不是签名的 Mac App。**
+> 原生 Mac App 目前是开发预览版。自动监听、贴附式搜索栏、模糊搜索和安全回填桥接已经实现并通过静默测试；按照用户要求，新的微信、Apple Mail、Outlook 可视化回归暂时没有运行，因此这里不会写“已经兼容”。
 
-## 先选路线
+## 它解决哪个时刻
 
-| 路线 | 状态 | 适合什么 | 需要 Cling 吗 |
-|---|---|---|---:|
-| **Cling Actions** | **Stable / 稳定版** | 用 Cling 找到文件，一键复制真实附件并打开目标应用 | 需要；自定义 Scripts 可能需要 Cling Pro 或试用 |
-| **Standalone Core** | **Developer Preview / 开发者预览** | 只为明确授权的目录建立本地元数据索引，并在命令行模糊搜索 | 不需要 |
+你已经在微信聊天或邮件草稿里，点击了“上传文件 / 添加附件”。最麻烦的不是打开应用，而是在系统文件窗口里重新想目录、翻 Finder、找那个大概记得名字的资料。
 
-两条路线服务同一个方向：让过去的资料更容易找回和复用。但它们目前还没有合并成一款独立的图形界面应用。
+MacList 只盯住这个时刻：
 
-## 稳定路线：Cling Actions
+1. 你在微信或邮件点击“上传文件”。
+2. macOS 文件选择窗口出现。
+3. MacList 自动识别，并把一条安静的搜索栏贴在这个窗口内部。
+4. 直接输入模糊文件名、项目名或路径片段。
+5. 按回车，文件在原上传窗口里被精确定位并选中。开发预览阶段由你最后点击“打开”。
 
-找到资料以后，常见的麻烦是还要打开 Finder、拖到微信或邮件、再确认是不是一个真正的附件。MacList Actions 把中间这段缩成一个动作：
+主流程不再要求 `⌥Space`，不打开 Finder，也不先跳到一个独立的 MacList 页面。
 
-1. 在 Cling 里搜索并选中文件；
-2. 运行 MacList 动作；
-3. MacList 把真实文件 URL 放入剪贴板，并打开目标应用；
-4. 你自己选择聊天或邮件，按 **Command + V**，检查后发送。
+## 当前完成度
 
-不上传文件，不自动选择对象，不自动发送。
+| 能力 | 状态 | 证据 |
+|---|---|---|
+| 文件窗口自动监听 | 已实现、静默验证通过 | 系统级焦点发现；宿主 PID 与文件面板 PID 分离；release 构建通过 |
+| 贴附式非激活搜索栏 | 已实现 | 布局和生命周期测试；已删除居中启动页路径 |
+| 中英文模糊搜索 | 已实现 | 无测试框架 smoke test + XCTest |
+| Spotlight 本地元数据候选 | 已实现 | 只使用文件名、路径、时间，不读正文 |
+| 精确回填原文件窗口 | 已实现安全门禁 | 精确核对物理文件；预览版不自动点最终“打开” |
+| 标准 `NSOpenPanel` 可视化回归 | 暂停 | 需要用户明确允许后再运行 |
+| 微信 / Apple Mail / Outlook 回归 | 尚未验证 | 通过前不做兼容承诺 |
+| 签名、公证、可下载安装包 | 尚未提供 | 当前从源码构建 |
 
-### 动作与快捷键
+仓库中的 Cling 动作脚本和 Standalone CLI 是早期原型，仍保留用于追溯，但已经不是产品主流程。
 
-| 动作 | 快捷键 | 结果 | 自动发送？ |
-|---|---:|---|---:|
-| 微信 | `⌃⌘W` | 复制真实文件并打开微信 | 否 |
-| 钉钉 | `⌃⌘D` | 复制真实文件并打开钉钉 | 否 |
-| Thunderbird | `⌃⌘E` | 复制真实文件并打开 Thunderbird | 否 |
-| Apple Mail | `⌃⌘M` | 复制真实文件并打开 Apple Mail | 否 |
-| Microsoft Outlook | `⌃⌘O` | 复制真实文件并打开 Outlook | 否 |
-| 资料清单 | `⌃⌘L` | 复制文件名和完整路径文字 | 否 |
+## 为什么必须做成原生小程序
 
-在 Cling 的 **Execute script** 面板中，也可以按单字母 `W`、`D`、`E`、`M`、`O` 或 `L`。
+Skill 可以负责安装说明、诊断和验证，但不能持续监听 macOS 窗口、显示不激活自身应用的贴附面板，也不能安全控制另一个应用打开的系统文件窗口。因此：
 
-### 安装稳定动作
+- 核心体验：Swift + AppKit 原生菜单栏 App；
+- 可选辅助：未来再提供安装/诊断 Skill。
 
-需要：
+## 技术结构
 
-- macOS 14 或更高版本；
-- 官方 [Cling 2.6.5](https://github.com/FuzzyIdeas/Cling/releases/tag/v2.6.5)；
-- 如果 Cling 对自定义 Scripts 有要求，需要 Pro 或仍有效的试用期；
-- 只需安装你实际使用的目标应用。
+```text
+MacListApp
+├── DialogProcessDiscovery   从系统焦点发现独立文件面板进程
+├── FileDialogMonitor         分开监听宿主和真实文件面板 PID
+├── FileDialogDetector        用聚焦、可见性和文件语义评分识别
+├── SearchPanelController     贴附紧凑的非激活搜索栏
+├── FileDialogBridge          把精确文件交回原窗口
+└── AccessibilityPermission  不绕过 macOS TCC
+
+MacListCore
+├── DialogObservation         纯状态机与贴附布局
+├── SearchEngine              确定性的模糊排序
+├── SpotlightProvider         本地元数据候选
+└── DialogSelectionPolicy     路径验证与失败保护
+```
+
+macOS 10.15 以后，Open Panel 由独立进程绘制，外部应用拿不到宿主的 `NSOpenPanel` 对象。MacList 因此只能使用经过用户授权的系统辅助功能接口，并且在无法确认窗口或文件时安全停止。
+
+## 静默构建与验证
+
+需要 macOS 13+ 和 Swift 6：
 
 ```bash
 git clone https://github.com/xffighting/maclist-actions.git
 cd maclist-actions
-./install.sh
-./doctor.sh
+./app/Scripts/verify.sh
 ```
 
-安装后重启 Cling，按 **右 Command + /** 打开入口。安装器会先核对 Cling 版本、Bundle ID、Developer ID 签名和 Team ID，异常时停止。
+这个命令只做静默检查：
 
-验证和卸载：
+- 运行状态机、布局、搜索和路径策略测试；
+- 本机有完整 Xcode 时运行 XCTest；
+- 构建 release 二进制和本地 `MacList.app`；
+- 校验 plist 与签名；
+- 不启动 MacList，不打开微信/邮件，不发送键盘事件。
+
+单独命令：
 
 ```bash
-./test.sh
-./doctor.sh
-./acceptance.sh /path/to/a/known/file
-./uninstall.sh
+swift build --package-path app
+./app/Scripts/smoke-test.sh
+./app/Scripts/build-app.sh release
 ```
 
-本机完整测试会临时覆盖剪贴板，CI 使用无 UI 模式。卸载会恢复安装前记录的同名脚本、六项偏好和 Scripts 目录权限，不删除 Cling 或其搜索索引。
+## 隐私与安全边界
 
-## 预览路线：Standalone Core
+- 不上传文件、无遥测、无账号、无 API Key；
+- 不读取文档正文，只搜索文件名、路径和时间；
+- 不打开 Finder，不切微信/邮件，不使用剪贴板注入或 AppleScript；
+- 不选择联系人、收件人或聊天，不自动发送；
+- 首次启动只走 macOS 正常的辅助功能授权；文件窗口控制权限从菜单栏明确申请，程序不能绕过；
+- 目录、空路径、已删除文件不能进入回填；
+- 预览版只负责精确选中并回读同一个物理文件，最终“打开”由用户确认；
+- Save 窗口不得自动提交，更不能自动覆盖文件。
 
-[`standalone/`](../standalone/) 是不依赖 Cling 的 Swift 文件名和路径搜索底座。它只索引你通过 `--root` 明确传入的目录，只在本机保存元数据，并提供确定性的模糊搜索。
+## 调研依据
 
-```bash
-cd standalone
-swift run maclist index --root "$HOME/Documents" --root "$HOME/Downloads"
-swift run maclist search "季度报价"
-swift run maclist doctor
-```
+- [Listary Quick Save & Open](https://www.listary.com/feature/quick-save-and-open)：产品时刻参考；
+- [Cling](https://github.com/FuzzyIdeas/Cling)：本地搜索体验与索引参考，GPL-3.0 源码不复制进本 MIT 项目；
+- [Dialog Jumper](https://github.com/limars874/dialog-jumper-macos)：MIT 的 macOS 文件窗口识别实验；
+- [Peekaboo](https://github.com/openclaw/Peekaboo)：成熟的 MIT 辅助功能自动化与 AX 元素重解析参考；
+- [LeaderKey](https://github.com/mikker/LeaderKey)：非激活 AppKit Panel 参考。
 
-它现在是供开发、测试和验证方向使用的 **CLI + Swift 库**，还没有菜单栏 App、全局快捷键、搜索窗口、实时文件更新、预览和动作联动。完整边界见 [Standalone Core 说明](../standalone/README.md)。
-
-## 隐私边界
-
-MacList 自有代码遵循以下边界：
-
-- 没有文件上传、遥测客户端、账号或 API Key；
-- 动作脚本和独立索引器都不读取文件正文；
-- 独立核心只扫描用户明确传入的根目录；
-- 独立核心默认跳过隐藏项、包内容和符号链接；
-- 附件交接写入的是原生文件 URL，不是路径文字；
-- 不自动选择联系人、聊天、草稿，不执行粘贴和发送；
-- 自有私密状态使用受限的本机文件权限。
-
-剪贴板中的文件 URL 会保留到下一次被覆盖；即使目标应用不存在，所选文件也可能已经进入剪贴板。Cling 和微信、钉钉、邮件客户端等第三方软件有自己的行为与隐私政策，本页承诺只覆盖 MacList 自有代码。
-
-## 为什么保留两条路线
-
-稳定动作层先解决“已经找到了，怎么快速复用”的现实问题；独立核心则从明确授权目录和纯本地元数据开始，为未来原生搜索应用建立可验证的基础。分开标注，可以现在交付真实价值，也不会把尚未完成的 CLI 包装成完整桌面产品。
-
-## 项目地图
-
-| 位置 | 内容 |
-|---|---|
-| `scripts/` | 稳定的 Cling 文件交接动作与原生剪贴板助手 |
-| `standalone/` | 开发者预览版 Swift 搜索核心和 CLI |
-| `tools/` | 可重复生成的演示素材与媒体隐私检查 |
-| [项目 Dashboard](https://xffighting.github.io/maclist-actions/project-dashboard.html) | 可交互查看项目状态、任务、时间线与决策 |
-| [ACCEPTANCE.md](../ACCEPTANCE.md) | 验收证据与产品边界 |
-| [COMPLIANCE.md](../COMPLIANCE.md) | 分发范围与上游隔离说明 |
-
-演示 GIF 全部使用合成文件名，没有录制真实桌面、账号、收件人或本机私密路径。
+完整产品边界和发布门槛见 [文件上传窗口流程规格](FILE_DIALOG_FLOW_SPEC.md)。
 
 ## 常见问题
 
-### 这是完整的“Mac 版 Listary”吗？
+### 微信点击上传后会自动出现吗？
 
-不是。稳定路线仍由 Cling 提供全局入口、索引、搜索、预览和结果选择；独立路线目前只是 CLI/Swift 库开发者预览。
+这是现在唯一正确的主流程。代码已经改为自动监听，不再依赖快捷键；但新的真实微信回归按要求暂停，未通过前不会写“已兼容微信”。
 
-### 会上传或自动发送文件吗？
+### 为什么要辅助功能权限？
 
-MacList 自有代码不会。稳定动作只把本地文件 URL 放入剪贴板并打开目标应用；你自己选择对象、粘贴、检查和发送。
+macOS 不允许外部应用直接取得微信/邮件的 `NSOpenPanel` 对象。要在不切应用、不用剪贴板的情况下识别窗口、写入路径并核对文件，只能走用户授权的系统 Accessibility API。
 
-### 为什么不直接发布修改版 Cling？
+### 会读取或上传我的文件吗？
 
-Cling v2.6.5 的公开工程含本地 WarpDrop 引用，以及尚未完成下游源码和许可证闭环的依赖或二进制。因此本仓库只发布自有代码，并引导用户安装官方 Cling。
+不会。MacList 只搜索本机元数据；最终文件仍由你已经打开的系统上传窗口接收。
 
-### 支持 Windows 吗？
+## 许可证
 
-当前不支持。稳定动作使用 macOS AppKit 剪贴板、JXA 和 `open`；独立 Swift 包也以 macOS 为目标。
-
-## 下一步
-
-- [ ] 把独立核心装进签名的原生 Mac 搜索窗口；
-- [ ] 增加用户可见的授权目录管理和可选实时更新；
-- [ ] 在不自动发送的前提下连接搜索结果与现有交接动作；
-- [ ] 增加快捷键配置和冲突检查；
-- [ ] macOS 工作流稳定后，再研究 Windows 适配。
-
-## 参与贡献
-
-阅读 [CONTRIBUTING.md](../CONTRIBUTING.md)。每个新动作都必须写清目标应用、快捷键、联网和正文读取情况、是否可能粘贴或发送，以及回滚方式。
-
-MacList 自有代码采用 MIT 许可证。Cling 是单独的 GPL-3.0 项目，本仓库不包含它，也不隶属于 FuzzyIdeas、The Low-Tech Guys、腾讯、钉钉、Mozilla、Microsoft、Apple 或 Listary。
-
-如果它确实少让你拖拽一次 Finder 文件，可以点一个 Star，让更多 Mac 用户找到它。
+MacList 自有代码采用 MIT 许可证，不隶属于 Apple、Listary、腾讯、Microsoft、FuzzyIdeas 或其他参考项目。详情见 [NOTICE](../NOTICE.md) 和 [COMPLIANCE](../COMPLIANCE.md)。

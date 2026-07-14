@@ -2,7 +2,28 @@
 
 All notable changes are documented here.
 
-## 0.2.0 - 2026-07-13
+## Unreleased - Native file-picker preview
+
+### Added
+
+- A native Swift/AppKit menu bar app that automatically discovers supported file pickers and attaches a nonactivating search panel.
+- System-wide focus discovery for out-of-process Open/Save Panel owners, with separate host, dialog-owner, and runtime event-target PIDs.
+- Confidence-scored file-dialog classification, observer cleanup, generation-bound UI transactions, and multi-screen attachment tests.
+- A cancellable, bounded accessibility bridge that validates physical file identity and runs AX work off the main thread.
+
+### Changed
+
+- Removed the launcher-hotkey and centered-window assumptions from the primary product flow.
+- Made the native preview select-only by default; the user confirms the final **Open** action until live compatibility testing is complete.
+- Reframed Cling actions and the standalone CLI as earlier prototypes rather than the primary product.
+
+### Safety
+
+- No visible application, harness, keyboard-event, WeChat, Mail, or Outlook test was run during this headless redesign.
+- The primary native flow contains no Finder launch, application activation/deactivation, clipboard injection, AppleScript, recipient selection, or automatic Send.
+- Live compatibility remains unverified and no native release tag should be created yet.
+
+## 0.2.0 - 2026-07-14
 
 ### Added
 

@@ -1,0 +1,23 @@
+# 当前待办
+
+- [x] 产品时刻改为“当前上传窗口内搜索并选择”。
+- [x] 暂停旧 v0.2 候选发版。
+- [x] 写明主流程、权限、失败语义与发布门槛。
+- [x] 确认快捷键主流程与居中弹窗不符合真实使用时刻，相关验收结论作废。
+- [x] 完成文件窗口自动监听状态机。
+- [x] 分离宿主 PID、文件面板 PID、运行时键盘目标与 generation。
+- [x] 完成系统焦点发现、可见窗口兜底和实际面板 PID 独立 AXObserver。
+- [x] 深层 AX 分类移出主线程，并清理旧 Observer 注册。
+- [x] 完成贴附式搜索栏、多屏/窄窗口定位和跨 Space 残留保护。
+- [x] 建立 `app/` Swift 包、失败优先测试和无 XCTest smoke。
+- [x] 完成非激活搜索浮层，删除激活、停用和居中启动页路径。
+- [x] 完成可取消、精确物理文件校验、默认 `selectOnly` 的全路径桥接。
+- [x] 本机静默 smoke、release 构建、plist、签名、doctor 和禁用流程扫描通过。
+- [x] README、规格、验收、合规和 Changelog 与实现一致。
+- [x] Dashboard 与实现一致；旧 Demo 在真实回归前不作为原生功能证据。
+- [ ] 获得用户明确许可后再运行标准 `NSOpenPanel` Harness。
+- [ ] 微信实测。
+- [ ] Apple Mail 实测。
+- [ ] Outlook 实测。
+- [ ] GitHub Actions 全绿。
+- [ ] 真实回归通过后再创建新版 tag 与 Release。

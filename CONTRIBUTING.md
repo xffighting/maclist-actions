@@ -1,80 +1,70 @@
 # Contributing
 
-Thanks for helping make file handoff on macOS less tedious.
+Thanks for helping make file selection on macOS less tedious.
 
-The repository has two maturity tracks:
+The native app under `app/` is the primary product. `standalone/` and `scripts/` are earlier prototypes with separate compatibility contracts.
 
-- Cling actions are stable and must preserve the current rollback contract.
-- `standalone/` is a Developer Preview and must remain usable without Cling.
+## Change the native app
 
-## Add an action
+The product moment is fixed: a user opens a file picker from WeChat, Mail, or another app; MacList appears on that picker without a launcher hotkey or application switch.
 
-1. Copy one of the executable scripts in `scripts/`.
-2. Name it with the `MacList - ` prefix.
-3. Add these metadata comments near the top:
+Native changes must preserve these boundaries:
 
-   ```text
-   # filesOnly: true
-   # minFiles: 1
-   # description: What the action does and what it never does
-   # key: one-unused-letter
-   # icon: an.sf.symbol
-   ```
+- keep `hostPID`, `dialogOwnerPID`, runtime event target, and session generation separate;
+- never use application activation/deactivation, Finder launch, clipboard injection, AppleScript, recipient selection, or automatic Send;
+- classify only focused, visible, high-confidence file dialogs;
+- cancel stale work when the dialog closes or changes;
+- keep the preview select-only until live compatibility evidence supports final auto-confirmation;
+- never bypass macOS TCC.
 
-4. Keep all outbound effects explicit.
-5. Identify destination applications by bundle ID, not a localized display name.
-6. Run both test modes:
-
-   ```bash
-   MACLIST_TEST_NO_UI=1 ./test.sh
-   ./test.sh
-   ```
-
-## Change the standalone core
-
-Standalone changes must keep scanning limited to roots explicitly supplied by the user and must not read document contents.
-
-Run:
+Run the no-UI gate:
 
 ```bash
-cd standalone
-swift test
-./smoke-test.sh
+./app/Scripts/verify.sh
 ```
 
-Document any new persisted field, permission, dependency, or platform API. A future launcher must be able to consume the library without parsing human-formatted CLI output.
+The script runs framework-free logic tests, runs XCTest when full Xcode is present, builds and signs a local app bundle, and performs command-line diagnostics. It must not launch `MacList.app` or `DialogHarness.app`.
 
-## Change README media
+Any visible test requires deliberate local consent. Record the macOS version, host app version, dialog kind, expected file, failure stage, and whether focus or Space changed. Never commit personal paths or screenshots.
 
-Media must be reproducible and contain synthetic data only:
+## Change the standalone prototype
+
+Standalone changes must stay limited to roots explicitly supplied by the user and must not read document contents.
 
 ```bash
-python3 tools/render_media.py
-swiftc tools/audit_media.swift -framework Vision -framework ImageIO -o /tmp/maclist-media-audit
-/tmp/maclist-media-audit docs/assets/social-preview.png docs/assets/maclist-demo.gif docs/assets/demo-poster.png
+swift test --package-path standalone
+./standalone/smoke-test.sh
 ```
 
-Do not use real screenshots, account names, recipients, email addresses, client names, or absolute user paths.
+Document every new persisted field, permission, dependency, or platform API.
+
+## Change a legacy Cling action
+
+Keep the existing rollback contract and test in no-UI mode:
+
+```bash
+MACLIST_TEST_NO_UI=1 ./test.sh
+```
+
+Do not distribute Cling binaries or copy GPL source into the MIT native app.
+
+## Change README media or the Dashboard
+
+- Use only synthetic filenames and project names.
+- Never capture a real desktop, account, chat, recipient, email address, client name, or local path.
+- Dashboard HTML follows the Apple/macOS Light Mode system in `DESIGN.md`.
+- Do not present the old Cling demo as evidence for the native file-picker flow.
 
 ## Pull-request checklist
 
-- [ ] Target application and supported name are documented.
-- [ ] Shortcut does not collide with an existing action.
-- [ ] Network use is absent. The current safety gate rejects `curl`, `wget`, and `nc`.
-- [ ] The action does not choose a recipient, paste, or send.
-- [ ] File contents are not read.
-- [ ] Missing-app behavior is safe.
-- [ ] Rollback behavior is documented.
-- [ ] Tests pass on macOS.
-- [ ] Standalone changes pass `swift test` and the smoke test without Cling.
-- [ ] Media changes pass the frame-by-frame Vision privacy audit.
+- [ ] The primary upload-window flow is unchanged or explicitly justified.
+- [ ] Native smoke tests and release build pass without launching UI.
+- [ ] Full XCTest passes on a complete Xcode runner.
+- [ ] No app switching, Finder, clipboard, AppleScript, automatic Send, or hidden network path was added.
+- [ ] Dialog PID ownership, focus, visibility, cancellation, and stale-element behavior are covered.
+- [ ] Save/folder/unknown dialogs cannot be auto-submitted.
+- [ ] Real-app compatibility claims include reproducible live evidence.
+- [ ] Markdown links, YAML, sensitive-data scan, and Dashboard JavaScript pass.
+- [ ] README, Chinese guide, flow specification, acceptance record, and changelog agree.
 
-## Design principles
-
-- Local-first by default.
-- Real file URLs for attachments; path text only when the user selects the checklist action.
-- Human confirmation before any external communication.
-- No hidden daemons, accounts, keys, or upload services.
-- Honest capability and dependency disclosure.
-
-Please keep pull requests small and focused. For a larger change, open an action request first.
+Keep pull requests small and evidence-led. A successful build is not a compatibility claim.

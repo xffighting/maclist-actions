@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run non-UI customization tests
         env:
@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Record Swift toolchain
         run: |
@@ -47,6 +47,34 @@ jobs:
       - name: Compile and exercise the standalone CLI
         run: ./standalone/smoke-test.sh
 
+  native-app:
+    name: Native app · automatic dialog flow
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Run native core unit tests
+        run: swift test --package-path app
+
+      - name: Run framework-free smoke tests
+        run: ./app/Scripts/smoke-test.sh
+
+      - name: Build the menu bar app without launching UI
+        run: ./app/Scripts/build-app.sh release
+
+      - name: Enforce the no-switching primary flow
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          if rg -n 'NSApp\.(activate|deactivate)|NSWorkspace\.shared\.open|activateFileViewerSelecting|NSPasteboard|NSAppleScript|RegisterEventHotKey|addGlobalMonitorForEvents' app/Sources/MacList; then
+            print -u2 'FAIL native primary flow contains app switching or clipboard behavior'
+            exit 1
+          fi
+          print 'PASS native primary flow has no app switching or clipboard behavior'
+
   media:
     name: Release media · dimensions and privacy
     runs-on: macos-latest
@@ -54,10 +82,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Verify social-preview requirements
-        shell: zsh
+        shell: zsh {0}
         run: |
           set -euo pipefail
           preview="docs/assets/social-preview.png"
@@ -83,7 +111,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Parse repository YAML
         shell: ruby {0}
@@ -101,7 +129,7 @@ jobs:
         run: python3 tools/verify_markdown_links.py
 
       - name: Reject local paths and credential-shaped strings
-        shell: zsh
+        shell: zsh {0}
         run: |
           set -euo pipefail
 
@@ -120,7 +148,7 @@ jobs:
           print 'PASS no absolute macOS user paths or credential-shaped strings found'
 
       - name: Verify v0.2 release metadata
-        shell: zsh
+        shell: zsh {0}
         run: |
           set -euo pipefail
           [[ "$(tr -d '[:space:]' < VERSION)" == "0.2.0" ]]

@@ -1,11 +1,11 @@
-# MacList Actions Design Tokens
+# MacList Design Tokens
 
 Use this system for README media, the interactive project dashboard, and future product previews. HTML surfaces default to Apple/macOS Light Mode; campaign media may use a darker presentation when extra contrast is required.
 
 ## Principles
 
 - Calm before clever: one obvious primary action per state.
-- Trust is visible: show local-first, human-send, and synthetic-data boundaries near the interaction.
+- Trust is visible: show local-first, final-open confirmation, and synthetic-data boundaries near the interaction.
 - Spacious and scannable: the first screen shows only the most important status and actions.
 - Exact text belongs in code-native assets so filenames, shortcuts, and safety claims remain accurate.
 - Content outranks decoration; avoid gradients, neon effects, dense tables, and ornamental motion.
@@ -40,7 +40,7 @@ README demo media uses its own high-contrast synthetic scene. Its palette must n
 
 ## Motion
 
-- Demo loop: 12 seconds at 10 frames per second.
+- Product motion stays below 200 ms; any future demo loop must show the native attached-picker flow truthfully.
 - State changes should show query, selection, explicit action, and human-controlled completion.
 - Honor reduced-motion preferences in HTML surfaces.
 

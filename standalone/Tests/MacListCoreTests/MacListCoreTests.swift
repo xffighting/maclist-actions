@@ -30,8 +30,11 @@ final class MacListCoreTests: XCTestCase {
             generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
 
-        XCTAssertEqual(report.snapshot.roots, [root.path])
-        XCTAssertEqual(report.snapshot.files.map(\.path), [allowed.path])
+        XCTAssertEqual(report.snapshot.roots, [roots[0].path])
+        XCTAssertEqual(
+            report.snapshot.files.map(\.path),
+            [PathScope.canonicalPath(allowed.path)]
+        )
         XCTAssertGreaterThanOrEqual(report.skippedCount, 1)
 
         let storeURL = sandbox.appendingPathComponent("store/index.json")
@@ -57,7 +60,10 @@ final class MacListCoreTests: XCTestCase {
             _ = try AuthorizedRoot(path: file.path)
             XCTFail("Expected a file-path authorization failure")
         } catch {
-            XCTAssertEqual(error as? RootAuthorizationError, .notDirectory(file.path))
+            XCTAssertEqual(
+                error as? RootAuthorizationError,
+                .notDirectory(PathScope.canonicalPath(file.path))
+            )
         }
     }
 
