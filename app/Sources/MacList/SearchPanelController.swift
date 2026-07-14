@@ -15,6 +15,13 @@ private final class CommandSearchField: NSSearchField {
     }
 }
 
+private enum CandidateSearchPhase {
+    case idle
+    case loading
+    case ready
+    case failed(String)
+}
+
 final class SearchPanelController: NSWindowController,
     NSSearchFieldDelegate,
     NSTableViewDataSource,
@@ -26,6 +33,10 @@ final class SearchPanelController: NSWindowController,
     private let searchField = CommandSearchField()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
+    private let fileColumn = NSTableColumn(
+        identifier: NSUserInterfaceItemIdentifier("file")
+    )
+    private let emptyStateLabel = NSTextField(wrappingLabelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let instructionLabel = NSTextField(labelWithString: "↩ 选择  ·  ↑↓ 移动  ·  Esc 收起")
     private var expandedConstraints: [NSLayoutConstraint] = []
@@ -36,6 +47,9 @@ final class SearchPanelController: NSWindowController,
     private var baseRecords: [FileRecord] = []
     private var displayedRecords: [FileRecord] = []
     private var queryGeneration = UUID()
+    private var queryCancellation: SpotlightQueryCancellation?
+    private var lastHandledQuery = ""
+    private var searchPhase: CandidateSearchPhase = .idle
     private var isExpanded = false
     private var isSuppressed = false
     private var isSubmitting = false
@@ -81,11 +95,16 @@ final class SearchPanelController: NSWindowController,
         observedDialog = dialog
 
         if isNewDialog {
+            queryGeneration = UUID()
+            queryCancellation?.cancel()
+            queryCancellation = nil
             selectionOperation?.cancel()
             selectionOperation = nil
             isSuppressed = false
             isSubmitting = false
             searchField.stringValue = ""
+            lastHandledQuery = ""
+            searchPhase = .idle
             searchField.placeholderString = "在 \(session.hostApplicationName) 的上传窗口中搜索文件"
             applySearch()
             setExpanded(false)
@@ -110,6 +129,8 @@ final class SearchPanelController: NSWindowController,
     func detach() {
         interactionState.detach()
         queryGeneration = UUID()
+        queryCancellation?.cancel()
+        queryCancellation = nil
         selectionOperation?.cancel()
         selectionOperation = nil
         window?.orderOut(nil)
@@ -119,6 +140,8 @@ final class SearchPanelController: NSWindowController,
         isSuppressed = false
         isSubmitting = false
         searchField.stringValue = ""
+        lastHandledQuery = ""
+        searchPhase = .idle
     }
 
     var isPanelKeyAndVisible: Bool {
@@ -158,6 +181,7 @@ final class SearchPanelController: NSWindowController,
             expanded: isExpanded
         )
         window.setFrame(frame, display: true, animate: false)
+        syncCandidateColumnWidth()
     }
 
     private func bestScreen(for frame: CGRect) -> NSScreen? {
@@ -176,13 +200,15 @@ final class SearchPanelController: NSWindowController,
         guard isExpanded != expanded else { return }
         if expanded {
             isExpanded = true
-            positionPanel()
             NSLayoutConstraint.activate(expandedConstraints)
             scrollView.isHidden = false
+            emptyStateLabel.isHidden = true
             statusLabel.isHidden = false
             instructionLabel.isHidden = false
+            positionPanel()
         } else {
             scrollView.isHidden = true
+            emptyStateLabel.isHidden = true
             statusLabel.isHidden = true
             instructionLabel.isHidden = true
             NSLayoutConstraint.deactivate(expandedConstraints)
@@ -215,6 +241,10 @@ final class SearchPanelController: NSWindowController,
         searchField.placeholderString = "搜索要上传的文件"
         searchField.controlSize = .large
         searchField.delegate = self
+        searchField.sendsSearchStringImmediately = true
+        searchField.sendsWholeSearchString = false
+        searchField.target = self
+        searchField.action = #selector(searchFieldAction)
         searchField.commandHandler = { [weak self] event in
             self?.handleSearchKey(event) ?? false
         }
@@ -229,14 +259,22 @@ final class SearchPanelController: NSWindowController,
         tableView.rowHeight = 52
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.selectionHighlightStyle = .regular
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.autoresizingMask = [.width]
         tableView.delegate = self
         tableView.dataSource = self
         tableView.target = self
         tableView.doubleAction = #selector(submitSelected)
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("file"))
-        column.resizingMask = .autoresizingMask
-        tableView.addTableColumn(column)
+        fileColumn.minWidth = 1
+        fileColumn.resizingMask = .autoresizingMask
+        tableView.addTableColumn(fileColumn)
         scrollView.documentView = tableView
+
+        emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptyStateLabel.alignment = .center
+        emptyStateLabel.font = .systemFont(ofSize: 13)
+        emptyStateLabel.textColor = .secondaryLabelColor
+        emptyStateLabel.isHidden = true
 
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.textColor = .secondaryLabelColor
@@ -252,7 +290,8 @@ final class SearchPanelController: NSWindowController,
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         instructionLabel.isHidden = true
 
-        [searchField, scrollView, statusLabel, instructionLabel].forEach(effect.addSubview)
+        [searchField, scrollView, emptyStateLabel, statusLabel, instructionLabel]
+            .forEach(effect.addSubview)
 
         NSLayoutConstraint.activate([
             effect.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -272,6 +311,11 @@ final class SearchPanelController: NSWindowController,
             scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -8),
 
+            emptyStateLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 24),
+            emptyStateLabel.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -24),
+            emptyStateLabel.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            emptyStateLabel.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+
             statusLabel.leadingAnchor.constraint(equalTo: searchField.leadingAnchor),
             statusLabel.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -10),
             statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: instructionLabel.leadingAnchor, constant: -10),
@@ -282,75 +326,161 @@ final class SearchPanelController: NSWindowController,
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        let hasQuery = !searchField.stringValue
+        handleQueryChange()
+    }
+
+    @objc private func searchFieldAction(_ sender: NSSearchField) {
+        handleQueryChange()
+    }
+
+    private func handleQueryChange() {
+        let query = searchField.stringValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
+        guard query != lastHandledQuery else { return }
+        lastHandledQuery = query
+
+        let hasQuery = !query.isEmpty
+        searchPhase = hasQuery ? .loading : .idle
         setExpanded(hasQuery)
         applySearch()
         if hasQuery {
             scheduleSpotlightQuery()
+        } else {
+            queryGeneration = UUID()
+            queryCancellation?.cancel()
+            queryCancellation = nil
         }
     }
 
     private func applySearch() {
+        let selectedPath = selectedRecord?.path
         displayedRecords = SearchEngine.search(
             searchField.stringValue,
             in: baseRecords,
             limit: 12
         )
         tableView.reloadData()
-        if !displayedRecords.isEmpty {
+        tableView.noteNumberOfRowsChanged()
+        syncCandidateColumnWidth()
+        if let selectedPath,
+           let selectedIndex = displayedRecords.firstIndex(where: { $0.path == selectedPath }) {
+            tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
+        } else if !displayedRecords.isEmpty {
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
         }
-
-        guard dialogSession != nil, isExpanded, !isSubmitting else { return }
-        statusLabel.stringValue = displayedRecords.isEmpty
-            ? "没有匹配文件，正在继续查询 Spotlight…"
-            : "\(displayedRecords.count) 个匹配 · 只读取文件名、路径和时间"
+        updateCandidatePresentation()
     }
 
     private func scheduleSpotlightQuery() {
+        queryCancellation?.cancel()
+        let cancellation = SpotlightQueryCancellation()
+        queryCancellation = cancellation
         let generation = UUID()
         queryGeneration = generation
         let query = searchField.stringValue
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self, self.queryGeneration == generation else { return }
-            self.loadRecords(for: query, showLoadingState: true, generation: generation)
+            self.loadRecords(
+                for: query,
+                showLoadingState: true,
+                generation: generation,
+                cancellation: cancellation
+            )
         }
     }
 
     private func loadRecords(
         for query: String,
         showLoadingState: Bool,
-        generation: UUID? = nil
+        generation: UUID? = nil,
+        cancellation: SpotlightQueryCancellation? = nil
     ) {
         if showLoadingState, dialogSession != nil, isExpanded {
-            statusLabel.stringValue = "正在查询 Spotlight…"
+            searchPhase = .loading
+            updateCandidatePresentation()
         }
         let provider = self.provider
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result {
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    return try provider.recentFiles()
+                    return try provider.recentFiles(cancellation: cancellation)
                 }
-                return try provider.matchingFiles(query)
+                return try provider.matchingFiles(query, cancellation: cancellation)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
                 if let generation, self.queryGeneration != generation { return }
+                if let cancellation, self.queryCancellation === cancellation {
+                    self.queryCancellation = nil
+                }
                 switch result {
                 case let .success(records):
+                    if generation != nil {
+                        self.searchPhase = .ready
+                    }
                     self.merge(records)
                     self.applySearch()
                 case let .failure(error):
-                    if self.dialogSession != nil, self.isExpanded {
-                        self.statusLabel.stringValue = error.localizedDescription
+                    if generation != nil {
+                        self.searchPhase = .failed(error.localizedDescription)
                     }
+                    self.applySearch()
                 }
             }
         }
+    }
+
+    private func updateCandidatePresentation() {
+        guard dialogSession != nil, isExpanded, !isSubmitting else {
+            emptyStateLabel.isHidden = true
+            return
+        }
+
+        if displayedRecords.isEmpty {
+            scrollView.isHidden = true
+            emptyStateLabel.isHidden = false
+            switch searchPhase {
+            case .idle:
+                emptyStateLabel.stringValue = "输入文件名开始搜索"
+                statusLabel.stringValue = ""
+            case .loading:
+                emptyStateLabel.stringValue = "正在搜索这台 Mac…"
+                statusLabel.stringValue = "支持文件名片段和多关键词"
+            case .ready:
+                emptyStateLabel.stringValue = "没有找到匹配文件\n请尝试更短的文件名"
+                statusLabel.stringValue = "Spotlight 已完成查询"
+            case let .failed(message):
+                emptyStateLabel.stringValue = "搜索暂时不可用\n请稍后重试"
+                statusLabel.stringValue = message
+            }
+            return
+        }
+
+        scrollView.isHidden = false
+        emptyStateLabel.isHidden = true
+        switch searchPhase {
+        case .loading:
+            statusLabel.stringValue = "\(displayedRecords.count) 个匹配 · 正在补充结果…"
+        case let .failed(message):
+            statusLabel.stringValue = "\(displayedRecords.count) 个本地匹配 · \(message)"
+        case .idle, .ready:
+            statusLabel.stringValue = "\(displayedRecords.count) 个匹配 · 只读取文件名和路径"
+        }
+    }
+
+    private func syncCandidateColumnWidth() {
+        guard isExpanded, let contentView = window?.contentView else { return }
+        contentView.layoutSubtreeIfNeeded()
+        let width = max(1, scrollView.contentSize.width)
+        var tableFrame = tableView.frame
+        tableFrame.size.width = width
+        tableView.frame = tableFrame
+        fileColumn.width = width
+        tableView.sizeLastColumnToFit()
     }
 
     private func merge(_ records: [FileRecord]) {

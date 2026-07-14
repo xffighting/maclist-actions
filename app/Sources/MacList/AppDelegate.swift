@@ -2,7 +2,6 @@ import AppKit
 import MacListCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let initialPermissionPromptKey = "MacListDidRequestAccessibilityPermission"
     private var statusItem: NSStatusItem?
     private var panelController: SearchPanelController?
     private var dialogMonitor: FileDialogMonitor?
@@ -136,11 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func requestInitialPermissionIfNeeded(using monitor: FileDialogMonitor) {
-        guard !AccessibilityPermission.isTrusted(promptIfNeeded: false),
-              !UserDefaults.standard.bool(forKey: initialPermissionPromptKey) else {
+        guard !AccessibilityPermission.isTrusted(promptIfNeeded: false) else {
             return
         }
-        UserDefaults.standard.set(true, forKey: initialPermissionPromptKey)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             monitor.requestAccessibilityPermission()
         }

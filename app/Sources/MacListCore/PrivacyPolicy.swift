@@ -16,16 +16,32 @@ public enum PrivacyPolicy {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) -> Bool {
-        let standardized = URL(fileURLWithPath: path).standardizedFileURL
-        let homePath = homeDirectory.standardizedFileURL.path
+        guard shouldIncludeSpotlightPath(
+            path: path,
+            homeDirectory: homeDirectory
+        ) else {
+            return false
+        }
 
-        guard standardized.path.hasPrefix(homePath + "/") else { return false }
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: standardized.path, isDirectory: &isDirectory),
               !isDirectory.boolValue else {
             return false
         }
+
+        return true
+    }
+
+    public static func shouldIncludeSpotlightPath(
+        path: String,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> Bool {
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL
+        let homePath = homeDirectory.standardizedFileURL.path
+
+        guard standardized.path.hasPrefix(homePath + "/") else { return false }
 
         let relative = String(standardized.path.dropFirst(homePath.count + 1))
         let components = relative.split(separator: "/").map(String.init)
@@ -35,6 +51,8 @@ public enum PrivacyPolicy {
         if components.first == "Library" {
             let isUserDocumentContainer = standardized.path.contains("/Data/Documents/")
                 || standardized.path.contains("/Mail Downloads/")
+                || standardized.path.contains("/Mobile Documents/")
+                || standardized.path.contains("/CloudStorage/")
             if !isUserDocumentContainer { return false }
             if components.contains(where: excludedLibrarySections.contains) { return false }
         }

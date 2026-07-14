@@ -3,6 +3,12 @@ import Foundation
 import XCTest
 
 final class DialogSelectionPolicyTests: XCTestCase {
+    private final class PermissionDeniedFileManager: FileManager, @unchecked Sendable {
+        override func attributesOfItem(atPath path: String) throws -> [FileAttributeKey: Any] {
+            throw CocoaError(.fileReadNoPermission)
+        }
+    }
+
     func testSelectAndConfirmPlanEndsByConfirmingSelection() {
         XCTAssertEqual(
             DialogSelectionPolicy.plan(for: .selectAndConfirm).last,
@@ -44,5 +50,24 @@ final class DialogSelectionPolicyTests: XCTestCase {
         let linkedFile = try DialogSelectionPolicy.validateFile(link)
         XCTAssertEqual(targetFile.url, linkedFile.url)
         XCTAssertEqual(targetFile.identity, linkedFile.identity)
+    }
+
+    func testPermissionDeniedPathIsDelegatedToOriginalFileDialog() throws {
+        let protectedURL = URL(fileURLWithPath: "/Users/tester/Documents/客户报价单.xlsx")
+        let validated = try DialogSelectionPolicy.validateFile(
+            protectedURL,
+            fileManager: PermissionDeniedFileManager()
+        )
+
+        XCTAssertEqual(validated.url, protectedURL.standardizedFileURL)
+        XCTAssertNil(validated.identity)
+    }
+
+    func testCandidateValidationDoesNotRequireFileSystemAccess() throws {
+        let protectedURL = URL(fileURLWithPath: "/Users/tester/Documents/云端占位文件.pdf")
+        let validated = try DialogSelectionPolicy.validateCandidate(protectedURL)
+
+        XCTAssertEqual(validated.url, protectedURL.standardizedFileURL)
+        XCTAssertNil(validated.identity)
     }
 }

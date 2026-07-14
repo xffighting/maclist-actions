@@ -1,5 +1,6 @@
 import AppKit
 import MacListCore
+import UniformTypeIdentifiers
 
 final class FileCellView: NSTableCellView {
     private let fileIcon = NSImageView()
@@ -57,13 +58,24 @@ final class FileCellView: NSTableCellView {
     }
 
     func configure(with record: FileRecord, now: Date = Date()) {
-        fileIcon.image = NSWorkspace.shared.icon(forFile: record.path)
+        if let contentType = UTType(filenameExtension: record.url.pathExtension) {
+            fileIcon.image = NSWorkspace.shared.icon(for: contentType)
+        } else {
+            fileIcon.image = NSImage(
+                systemSymbolName: "doc",
+                accessibilityDescription: "文件"
+            )
+        }
         titleLabel.stringValue = record.displayName
         pathLabel.stringValue = PrivacyPolicy.compactParentPath(for: record.path)
 
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        metaLabel.stringValue = formatter.localizedString(for: record.lastUsedAt, relativeTo: now)
+        if record.lastUsedAt == .distantPast {
+            metaLabel.stringValue = "Spotlight"
+        } else {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .abbreviated
+            metaLabel.stringValue = formatter.localizedString(for: record.lastUsedAt, relativeTo: now)
+        }
         toolTip = record.path
     }
 }

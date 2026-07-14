@@ -113,7 +113,7 @@ final class FileDialogBridge {
 
         let target: ValidatedFile
         do {
-            target = try DialogSelectionPolicy.validateFile(url)
+            target = try DialogSelectionPolicy.validateCandidate(url)
         } catch let error as DialogSelectionError {
             complete(.failure(error))
             return operation
@@ -440,12 +440,16 @@ final class FileDialogBridge {
                 for node in nodes {
                     guard let selectedURL = AXAccess.url(node, kAXURLAttribute)
                             ?? AXAccess.url(node, kAXDocumentAttribute),
-                          let selectedFile = try? DialogSelectionPolicy.validateFile(selectedURL) else {
+                          let selectedFile = try? DialogSelectionPolicy.validateCandidate(selectedURL) else {
                         continue
                     }
-                    if let identity = target.identity {
-                        if selectedFile.identity == identity { return true }
-                    } else if selectedFile.url == target.url {
+                    if let targetIdentity = target.identity,
+                       let selectedIdentity = selectedFile.identity,
+                       selectedIdentity == targetIdentity {
+                        return true
+                    }
+                    if selectedFile.url.standardizedFileURL.path
+                        == target.url.standardizedFileURL.path {
                         return true
                     }
                 }

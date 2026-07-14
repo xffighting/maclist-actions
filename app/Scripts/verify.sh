@@ -15,4 +15,13 @@ fi
 
 plutil -lint "$ROOT/outputs/MacList.app/Contents/Info.plist"
 codesign --verify --deep --strict "$ROOT/outputs/MacList.app"
+
+if [[ "${MACLIST_CODE_SIGN_IDENTITY:--}" == "-" ]]; then
+  requirement="$(codesign -d -r- "$ROOT/outputs/MacList.app" 2>&1)"
+  [[ "$requirement" == *'designated => identifier "com.xffighting.maclist"'* ]] || {
+    echo "MacList local signature does not have a stable designated requirement" >&2
+    exit 1
+  }
+fi
+
 "$ROOT/outputs/MacList.app/Contents/MacOS/MacList" --doctor

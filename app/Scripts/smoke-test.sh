@@ -10,8 +10,11 @@ swiftc \
   "$ROOT/Sources/MacListCore/DialogSelectionPolicy.swift" \
   "$ROOT/Sources/MacListCore/Models.swift" \
   "$ROOT/Sources/MacListCore/SearchEngine.swift" \
+  "$ROOT/Sources/MacListCore/PrivacyPolicy.swift" \
+  "$ROOT/Sources/MacListCore/SpotlightProvider.swift" \
   "$ROOT/Sources/MacListCore/DialogObservation.swift" \
   "$ROOT/SmokeTests/FuzzySearchSmoke.swift" \
+  "$ROOT/SmokeTests/SpotlightProviderSmoke.swift" \
   "$ROOT/SmokeTests/DialogObservationSmoke.swift" \
   "$ROOT/SmokeTests/DialogSelectionPolicySmoke.swift" \
   -o "$BUILD_DIR/dialog-selection-policy-smoke"

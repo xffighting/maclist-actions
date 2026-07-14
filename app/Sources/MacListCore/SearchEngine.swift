@@ -12,7 +12,12 @@ public enum SearchEngine {
         let safeLimit = max(limit, 1)
 
         guard !normalizedQuery.isEmpty else {
-            return Array(records.sorted { $0.lastUsedAt > $1.lastUsedAt }.prefix(safeLimit))
+            return Array(records.sorted { lhs, rhs in
+                if lhs.lastUsedAt == rhs.lastUsedAt {
+                    return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+                }
+                return lhs.lastUsedAt > rhs.lastUsedAt
+            }.prefix(safeLimit))
         }
 
         let tokens = normalizedQuery
@@ -25,6 +30,10 @@ public enum SearchEngine {
         }
         .sorted { lhs, rhs in
             if lhs.score == rhs.score {
+                if lhs.record.lastUsedAt == rhs.record.lastUsedAt {
+                    return lhs.record.path.localizedStandardCompare(rhs.record.path)
+                        == .orderedAscending
+                }
                 return lhs.record.lastUsedAt > rhs.record.lastUsedAt
             }
             return lhs.score > rhs.score

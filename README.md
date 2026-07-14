@@ -38,8 +38,8 @@ MacList is designed around that exact moment.
 1. Click **Upload File** in WeChat, Mail, Outlook, or another Mac app.
 2. The system file picker appears.
 3. MacList detects it automatically and attaches a quiet search bar to that same window.
-4. Type a fuzzy filename, project name, or path fragment.
-5. Press Return; MacList locates and selects the exact file in the original picker. During the developer preview, you make the final **Open** confirmation yourself.
+4. Type a fuzzy filename, project name, or path fragment. A candidate list opens in place with the filename and parent folder.
+5. Use the arrow keys or pointer to choose a candidate, then press Return. MacList locates and selects that exact path in the original picker. During the developer preview, you make the final **Open** confirmation yourself.
 
 No launcher hotkey is required in the primary flow. No Finder window opens. MacList does not open or switch to the destination app—it stays attached to the picker you already invoked.
 
@@ -58,7 +58,8 @@ flowchart LR
 | Automatic file-window lifecycle monitor | Implemented, headless-verified | System-wide focus discovery separates host and dialog-owner PIDs; pure state tests and release build pass |
 | Attached, nonactivating search bar | Implemented | Geometry and lifecycle tests; no centered launcher path |
 | Chinese and English fuzzy filename search | Implemented | Framework-free smoke tests and XCTest suite |
-| Spotlight metadata lookup | Implemented | Filename, path, and time only; no document-body reads |
+| Visible candidate list and search states | Implemented | Loading, results, no-match, and failure states; stale queries are cancelled |
+| Spotlight metadata lookup | Implemented | Filename and path metadata only; no document-body or candidate-file reads |
 | Exact file-picker handoff | Implemented with fail-safe | Preview selects and verifies the physical file, then leaves the final **Open** click to the user |
 | Standard `NSOpenPanel` live regression | Paused | Requires explicit permission to run visible UI testing |
 | WeChat / Apple Mail / Outlook live regression | Not yet verified | No compatibility claim until each app is tested |
@@ -119,10 +120,10 @@ Generated local artifacts are placed under `app/outputs/` and are intentionally 
 ## Privacy and safety
 
 - No upload service, telemetry client, account, or API key.
-- No document-body reads; search uses filenames, paths, and timestamps.
+- No document-body or candidate-file reads; search uses local filename and path metadata.
 - No Finder launch, app switching, clipboard injection, AppleScript, recipient selection, or automatic Send.
 - The first launch uses the normal macOS Accessibility prompt; file-window control permission is exposed from the menu bar. MacList cannot bypass TCC.
-- The bridge validates that the target is a real file, rejects directories and missing paths, and uses bounded timeouts.
+- Candidate handoff does not probe protected folders or cloud placeholders. The original picker owns file access, while MacList verifies the exact selected path with bounded timeouts.
 - The current preview never presses the original picker's final button. It selects and reads back the exact physical file, then leaves confirmation under user control.
 - Save dialogs must never be auto-submitted or allowed to overwrite a file.
 

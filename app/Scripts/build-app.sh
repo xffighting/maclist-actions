@@ -6,6 +6,7 @@ CONFIGURATION="${1:-release}"
 OUTPUT_DIR="${APP_OUTPUT_DIR:-$ROOT/outputs}"
 MACLIST_APP="$OUTPUT_DIR/MacList.app"
 HARNESS_APP="$OUTPUT_DIR/DialogHarness.app"
+CODE_SIGN_IDENTITY="${MACLIST_CODE_SIGN_IDENTITY:--}"
 
 swift build --package-path "$ROOT" -c "$CONFIGURATION"
 BIN_DIR="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)"
@@ -23,8 +24,32 @@ install -m 0644 "$ROOT/Resources/DialogHarness-Info.plist" "$HARNESS_APP/Content
 
 plutil -lint "$MACLIST_APP/Contents/Info.plist" >/dev/null
 plutil -lint "$HARNESS_APP/Contents/Info.plist" >/dev/null
-codesign --force --deep --sign - "$MACLIST_APP" >/dev/null
-codesign --force --deep --sign - "$HARNESS_APP" >/dev/null
+
+sign_app() {
+    local app_path="$1"
+    local bundle_id="$2"
+
+    if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
+        # Keep a stable designated requirement for local development builds.
+        # A plain ad-hoc signature defaults to a CDHash requirement, which
+        # changes after every rebuild and silently invalidates macOS TCC grants.
+        codesign \
+            --force \
+            --deep \
+            --sign - \
+            --requirements "=designated => identifier \"$bundle_id\"" \
+            "$app_path" >/dev/null
+    else
+        codesign \
+            --force \
+            --deep \
+            --sign "$CODE_SIGN_IDENTITY" \
+            "$app_path" >/dev/null
+    fi
+}
+
+sign_app "$MACLIST_APP" "com.xffighting.maclist"
+sign_app "$HARNESS_APP" "com.xffighting.maclist.dialog-harness"
 
 echo "$MACLIST_APP"
 echo "$HARNESS_APP"

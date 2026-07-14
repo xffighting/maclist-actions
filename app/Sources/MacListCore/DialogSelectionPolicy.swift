@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public enum DialogSelectionMode: String, Codable, Sendable {
     case selectAndConfirm
@@ -91,6 +92,19 @@ public extension DialogBridgeStep {
 }
 
 public enum DialogSelectionPolicy {
+    public static func validateCandidate(
+        _ url: URL
+    ) throws -> ValidatedFile {
+        guard url.isFileURL, !url.path.isEmpty else {
+            throw DialogSelectionError.emptyPath
+        }
+
+        // Do not stat a candidate here. The host application's Open Panel owns
+        // access to protected folders and cloud placeholders; it will reject a
+        // missing file, while MacList verifies the exact selected AX path.
+        return ValidatedFile(url: url.standardizedFileURL, identity: nil)
+    }
+
     public static func validateFileURL(
         _ url: URL,
         fileManager: FileManager = .default
@@ -107,21 +121,47 @@ public enum DialogSelectionPolicy {
         }
 
         let standardized = url.standardizedFileURL
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: standardized.path, isDirectory: &isDirectory) else {
-            throw DialogSelectionError.fileMissing(standardized.path)
+        do {
+            let canonical = standardized.resolvingSymlinksInPath()
+            let attributes = try fileManager.attributesOfItem(atPath: canonical.path)
+            if attributes[.type] as? FileAttributeType == .typeDirectory {
+                throw DialogSelectionError.directoryNotAllowed(canonical.path)
+            }
+            let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value
+            let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+            let identity = device.flatMap { device in
+                inode.map { FileIdentity(device: device, inode: $0) }
+            }
+            return ValidatedFile(url: canonical, identity: identity)
+        } catch let error as DialogSelectionError {
+            throw error
+        } catch {
+            let fileError = error as NSError
+            if isMissingFileError(fileError) {
+                throw DialogSelectionError.fileMissing(standardized.path)
+            }
+
+            // TCC-protected folders and cloud placeholders may not be directly
+            // readable by MacList. The original Open Panel owns that access, so
+            // keep the normalized path and verify its AX-selected URL instead.
+            return ValidatedFile(url: standardized, identity: nil)
         }
-        guard !isDirectory.boolValue else {
-            throw DialogSelectionError.directoryNotAllowed(standardized.path)
+    }
+
+    private static func isMissingFileError(_ error: NSError) -> Bool {
+        if error.domain == NSCocoaErrorDomain {
+            let code = CocoaError.Code(rawValue: error.code)
+            if code == .fileNoSuchFile || code == .fileReadNoSuchFile {
+                return true
+            }
         }
-        let canonical = standardized.resolvingSymlinksInPath()
-        let attributes = try? fileManager.attributesOfItem(atPath: canonical.path)
-        let device = (attributes?[.systemNumber] as? NSNumber)?.uint64Value
-        let inode = (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value
-        let identity = device.flatMap { device in
-            inode.map { FileIdentity(device: device, inode: $0) }
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(ENOENT) {
+            return true
         }
-        return ValidatedFile(url: canonical, identity: identity)
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return isMissingFileError(underlying)
+        }
+        return false
     }
 
     public static func plan(for mode: DialogSelectionMode) -> [DialogBridgeStep] {

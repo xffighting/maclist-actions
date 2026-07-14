@@ -1,5 +1,11 @@
 import Foundation
 
+private final class PermissionDeniedFileManager: FileManager, @unchecked Sendable {
+    override func attributesOfItem(atPath path: String) throws -> [FileAttributeKey: Any] {
+        throw CocoaError(.fileReadNoPermission)
+    }
+}
+
 @main
 enum DialogSelectionPolicySmoke {
     static func main() throws {
@@ -35,6 +41,25 @@ enum DialogSelectionPolicySmoke {
             // Expected.
         }
 
+        let missingFile = temporaryDirectory.appendingPathComponent("不存在.pdf")
+        let candidate = try DialogSelectionPolicy.validateCandidate(missingFile)
+        precondition(candidate.url == missingFile.standardizedFileURL)
+        precondition(candidate.identity == nil)
+        do {
+            _ = try DialogSelectionPolicy.validateFileURL(missingFile)
+            preconditionFailure("missing file must be rejected")
+        } catch DialogSelectionError.fileMissing {
+            // Expected.
+        }
+
+        let protectedFile = URL(fileURLWithPath: "/Users/tester/Documents/受保护报价.pdf")
+        let protectedValidation = try DialogSelectionPolicy.validateFile(
+            protectedFile,
+            fileManager: PermissionDeniedFileManager()
+        )
+        precondition(protectedValidation.url == protectedFile.standardizedFileURL)
+        precondition(protectedValidation.identity == nil)
+
         let confirmPlan = DialogSelectionPolicy.plan(for: .selectAndConfirm)
         precondition(confirmPlan.last == .confirmSelection)
 
@@ -42,6 +67,7 @@ enum DialogSelectionPolicySmoke {
         precondition(!selectOnlyPlan.contains(.confirmSelection))
 
         FuzzySearchSmoke.run()
+        try SpotlightProviderSmoke.run()
         DialogObservationSmoke.run()
         print("dialog-selection-policy: ok")
     }
