@@ -32,7 +32,7 @@ final class MacListCoreTests: XCTestCase {
 
         XCTAssertEqual(report.snapshot.roots, [roots[0].path])
         XCTAssertEqual(
-            report.snapshot.files.map(\.path),
+            report.snapshot.files.map { PathScope.canonicalPath($0.path) },
             [PathScope.canonicalPath(allowed.path)]
         )
         XCTAssertGreaterThanOrEqual(report.skippedCount, 1)
