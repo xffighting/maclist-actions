@@ -52,7 +52,7 @@ enum DialogSelectionPolicySmoke {
             // Expected.
         }
 
-        let protectedFile = URL(fileURLWithPath: "/Users/tester/Documents/受保护报价.pdf")
+        let protectedFile = URL(fileURLWithPath: "/tmp/maclist-protected-home/Documents/受保护报价.pdf")
         let protectedValidation = try DialogSelectionPolicy.validateFile(
             protectedFile,
             fileManager: PermissionDeniedFileManager()

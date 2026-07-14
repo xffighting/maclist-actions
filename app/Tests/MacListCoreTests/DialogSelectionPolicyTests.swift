@@ -53,7 +53,7 @@ final class DialogSelectionPolicyTests: XCTestCase {
     }
 
     func testPermissionDeniedPathIsDelegatedToOriginalFileDialog() throws {
-        let protectedURL = URL(fileURLWithPath: "/Users/tester/Documents/客户报价单.xlsx")
+        let protectedURL = URL(fileURLWithPath: "/tmp/maclist-protected-home/Documents/客户报价单.xlsx")
         let validated = try DialogSelectionPolicy.validateFile(
             protectedURL,
             fileManager: PermissionDeniedFileManager()
@@ -64,7 +64,7 @@ final class DialogSelectionPolicyTests: XCTestCase {
     }
 
     func testCandidateValidationDoesNotRequireFileSystemAccess() throws {
-        let protectedURL = URL(fileURLWithPath: "/Users/tester/Documents/云端占位文件.pdf")
+        let protectedURL = URL(fileURLWithPath: "/tmp/maclist-protected-home/Documents/云端占位文件.pdf")
         let validated = try DialogSelectionPolicy.validateCandidate(protectedURL)
 
         XCTAssertEqual(validated.url, protectedURL.standardizedFileURL)
