@@ -37,7 +37,7 @@ MacList is designed around that exact moment.
 
 1. Click **Upload File** in WeChat, Mail, Outlook, or another Mac app.
 2. The system file picker appears.
-3. MacList detects it automatically and attaches a quiet search bar to that same window.
+3. MacList detects it automatically, attaches a quiet search bar to that same window, and gives it keyboard focus without activating or switching apps.
 4. Type a fuzzy filename, project name, or path fragment. A candidate list opens in place with the filename and parent folder.
 5. Use the arrow keys or pointer to choose a candidate, then press Return. MacList locates and selects that exact path in the original picker. During the developer preview, you make the final **Open** confirmation yourself.
 
@@ -56,7 +56,7 @@ flowchart LR
 | Capability | Status | Evidence |
 |---|---|---|
 | Automatic file-window lifecycle monitor | Implemented, headless-verified | System-wide focus discovery separates host and dialog-owner PIDs; pure state tests and release build pass |
-| Attached, nonactivating search bar | Implemented | Geometry and lifecycle tests; no centered launcher path |
+| Attached, nonactivating search bar | Implemented | AppKit key-window/first-responder recovery with bounded retries; no centered launcher path |
 | Chinese and English fuzzy filename search | Implemented | Framework-free smoke tests and XCTest suite |
 | Visible candidate list and search states | Implemented | Loading, results, no-match, and failure states; stale queries are cancelled |
 | Spotlight metadata lookup | Implemented | Filename and path metadata only; no document-body or candidate-file reads |
@@ -123,7 +123,8 @@ Generated local artifacts are placed under `app/outputs/` and are intentionally 
 - No document-body or candidate-file reads; search uses local filename and path metadata.
 - No Finder launch, app switching, clipboard injection, AppleScript, recipient selection, or automatic Send.
 - The first launch uses the normal macOS Accessibility prompt; file-window control permission is exposed from the menu bar. MacList cannot bypass TCC.
-- Candidate handoff does not probe protected folders or cloud placeholders. The original picker owns file access, while MacList verifies the exact selected path with bounded timeouts.
+- A separate, user-initiated menu action can check top-level access to Desktop, Documents, Downloads, iCloud Drive, and installed cloud-provider roots. It does not read file contents, persist directory listings, or create a local index.
+- Candidate handoff does not open the candidate file or download cloud placeholders. The original picker owns file access, while MacList verifies the exact selected path with bounded timeouts.
 - The current preview never presses the original picker's final button. It selects and reads back the exact physical file, then leaves confirmation under user control.
 - Save dialogs must never be auto-submitted or allowed to overwrite a file.
 
@@ -169,6 +170,12 @@ Not yet. The automatic monitor has been implemented, but the redesigned flow has
 <summary><strong>Why does MacList need Accessibility permission?</strong></summary>
 
 macOS does not expose another app's `NSOpenPanel` object. Permission-gated Accessibility APIs are required to identify the picker, write the chosen path, and verify the selected file without switching apps or using the clipboard.
+</details>
+
+<details>
+<summary><strong>Why can the search bar appear without showing my file?</strong></summary>
+
+First, use the MacList menu-bar item **检查常用文件夹与云盘访问权限…** (Check Common Folders and Cloud Drive Access) and respond to any macOS permission prompts. MacList then refreshes Spotlight metadata. This check is user-initiated and does not build a private file index, so files excluded from Spotlight can still remain unavailable in the current preview.
 </details>
 
 <details>

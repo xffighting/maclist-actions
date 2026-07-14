@@ -1,5 +1,6 @@
 import AppKit
 import MacListCore
+import OSLog
 
 private final class AttachedSearchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -8,6 +9,7 @@ private final class AttachedSearchPanel: NSPanel {
 
 private final class CommandSearchField: NSSearchField {
     var commandHandler: ((NSEvent) -> Bool)?
+    override var needsPanelToBecomeKey: Bool { true }
 
     override func keyDown(with event: NSEvent) {
         if commandHandler?(event) == true { return }
@@ -29,6 +31,10 @@ final class SearchPanelController: NSWindowController,
 
     private let provider: SpotlightProvider
     private let dialogBridge: FileDialogBridge
+    private let logger = Logger(
+        subsystem: "com.xffighting.maclist",
+        category: "SearchPanel"
+    )
 
     private let searchField = CommandSearchField()
     private let tableView = NSTableView()
@@ -48,6 +54,7 @@ final class SearchPanelController: NSWindowController,
     private var displayedRecords: [FileRecord] = []
     private var queryGeneration = UUID()
     private var queryCancellation: SpotlightQueryCancellation?
+    private var focusGeneration = UUID()
     private var lastHandledQuery = ""
     private var searchPhase: CandidateSearchPhase = .idle
     private var isExpanded = false
@@ -71,7 +78,7 @@ final class SearchPanelController: NSWindowController,
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
         panel.hidesOnDeactivate = false
         panel.worksWhenModal = true
-        panel.becomesKeyOnlyIfNeeded = false
+        panel.becomesKeyOnlyIfNeeded = true
         panel.isMovable = false
         panel.hasShadow = true
         panel.isOpaque = false
@@ -95,6 +102,7 @@ final class SearchPanelController: NSWindowController,
         observedDialog = dialog
 
         if isNewDialog {
+            focusGeneration = UUID()
             queryGeneration = UUID()
             queryCancellation?.cancel()
             queryCancellation = nil
@@ -128,6 +136,7 @@ final class SearchPanelController: NSWindowController,
 
     func detach() {
         interactionState.detach()
+        focusGeneration = UUID()
         queryGeneration = UUID()
         queryCancellation?.cancel()
         queryCancellation = nil
@@ -152,9 +161,46 @@ final class SearchPanelController: NSWindowController,
         guard let window,
               let session = dialogSession,
               isCurrentDialogContext(session, window: window) else { return }
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(searchField)
-        searchField.selectText(nil)
+        let generation = UUID()
+        focusGeneration = generation
+        window.orderFrontRegardless()
+        claimSearchFocus(generation: generation, attempt: 0)
+        for (attempt, delay) in [(1, 0.08), (2, 0.25)] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.claimSearchFocus(generation: generation, attempt: attempt)
+            }
+        }
+    }
+
+    private func claimSearchFocus(generation: UUID, attempt: Int) {
+        guard focusGeneration == generation,
+              let window,
+              let session = dialogSession,
+              !isSuppressed,
+              !isSubmitting,
+              isCurrentDialogContext(session, window: window) else {
+            return
+        }
+
+        if !window.isKeyWindow {
+            window.makeKey()
+        }
+        let accepted = isSearchFieldFocused || window.makeFirstResponder(searchField)
+        if attempt == 0, accepted, searchField.stringValue.isEmpty {
+            searchField.selectText(nil)
+        }
+        let isKey = window.isKeyWindow
+        let isFocused = isSearchFieldFocused
+        logger.notice(
+            "focus attempt=\(attempt, privacy: .public) key=\(isKey, privacy: .public) accepted=\(accepted, privacy: .public) focused=\(isFocused, privacy: .public)"
+        )
+    }
+
+    private var isSearchFieldFocused: Bool {
+        guard let window else { return false }
+        if window.firstResponder === searchField { return true }
+        guard let editor = searchField.currentEditor() else { return false }
+        return window.firstResponder === editor
     }
 
     private func isCurrentDialogContext(
@@ -336,10 +382,19 @@ final class SearchPanelController: NSWindowController,
     private func handleQueryChange() {
         let query = searchField.stringValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasQuery = !query.isEmpty
+        if hasQuery {
+            // Real input means focus recovery succeeded; cancel delayed retries.
+            focusGeneration = UUID()
+        }
         guard query != lastHandledQuery else { return }
         lastHandledQuery = query
 
-        let hasQuery = !query.isEmpty
+        let isKey = window?.isKeyWindow == true
+        logger.notice(
+            "query changed hasQuery=\(hasQuery, privacy: .public) key=\(isKey, privacy: .public)"
+        )
+
         searchPhase = hasQuery ? .loading : .idle
         setExpanded(hasQuery)
         applySearch()
@@ -370,6 +425,9 @@ final class SearchPanelController: NSWindowController,
         } else {
             tableView.deselectAll(nil)
         }
+        logger.notice(
+            "presentation base=\(self.baseRecords.count, privacy: .public) displayed=\(self.displayedRecords.count, privacy: .public) expanded=\(self.isExpanded, privacy: .public)"
+        )
         updateCandidatePresentation()
     }
 
@@ -419,12 +477,18 @@ final class SearchPanelController: NSWindowController,
                 }
                 switch result {
                 case let .success(records):
+                    self.logger.notice(
+                        "query completed provider=\(records.count, privacy: .public)"
+                    )
                     if generation != nil {
                         self.searchPhase = .ready
                     }
                     self.merge(records)
                     self.applySearch()
                 case let .failure(error):
+                    self.logger.error(
+                        "query failed type=\(String(describing: type(of: error)), privacy: .public)"
+                    )
                     if generation != nil {
                         self.searchPhase = .failed(error.localizedDescription)
                     }
