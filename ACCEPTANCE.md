@@ -31,7 +31,7 @@
 - 禁用流程静态扫描：未发现 `NSApp.activate`、`NSApp.deactivate`、Finder 打开、剪贴板注入或旧快捷键入口。
 - 进程回读：测试结束后没有 MacList 或 DialogHarness 图形进程。
 
-本机只有 Command Line Tools，缺少 XCTest 模块；完整 XCTest 由 GitHub Actions 的 Xcode runner 执行。本机 smoke 不能替代真实应用回归。
+本机只有 Command Line Tools，缺少 XCTest 模块；[GitHub Actions](https://github.com/xffighting/maclist-actions/actions/runs/29305102736) 已在完整 Xcode runner 上通过 Native App、Standalone、旧动作、仓库隐私和媒体五组门禁。本机 smoke 与 CI 都不能替代真实应用回归。
 
 ## 明确没有做
 

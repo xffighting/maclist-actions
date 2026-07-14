@@ -19,5 +19,5 @@
 - [ ] 微信实测。
 - [ ] Apple Mail 实测。
 - [ ] Outlook 实测。
-- [ ] GitHub Actions 全绿。
+- [x] GitHub Actions 全绿。
 - [ ] 真实回归通过后再创建新版 tag 与 Release。
