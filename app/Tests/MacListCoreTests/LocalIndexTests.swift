@@ -119,6 +119,8 @@ final class LocalIndexTests: XCTestCase {
                 $0.path.hasPrefix(canonicalRootPath + "/")
             }
         )
+        XCTAssertTrue(report.snapshot.isComplete)
+        XCTAssertEqual(report.accessErrorCount, 0)
     }
 
     func testIndexerDoesNotFollowDirectorySymlinkOutsideAuthorizedRoot() throws {
@@ -152,6 +154,80 @@ final class LocalIndexTests: XCTestCase {
         )
         let canonicalOutsidePath = outsideFile.resolvingSymlinksInPath().standardizedFileURL.path
         XCTAssertFalse(report.snapshot.entries.contains { $0.path == canonicalOutsidePath })
+    }
+
+    func testChildDirectoryEnumerationErrorKeepsSafeResultsButMarksSnapshotIncomplete() throws {
+        let sandbox = try makeSandbox()
+        let root = sandbox.appendingPathComponent("Authorized", isDirectory: true)
+        let blockedChild = root.appendingPathComponent("BlockedProject", isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o700)],
+                ofItemAtPath: blockedChild.path
+            )
+            try? FileManager.default.removeItem(at: sandbox)
+        }
+        try FileManager.default.createDirectory(
+            at: blockedChild,
+            withIntermediateDirectories: true
+        )
+        let safeFile = root.appendingPathComponent("visible.pdf")
+        try Data("safe".utf8).write(to: safeFile)
+        try Data("blocked".utf8).write(
+            to: blockedChild.appendingPathComponent("blocked.pdf")
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o000)],
+            ofItemAtPath: blockedChild.path
+        )
+
+        let report = LocalFileIndexer(
+            options: LocalFileIndexingOptions(maximumFiles: 100, includeHidden: false)
+        ).buildSnapshot(
+            roots: [root],
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertEqual(
+            report.snapshot.entries.map(\.path),
+            [safeFile.resolvingSymlinksInPath().standardizedFileURL.path]
+        )
+        XCTAssertGreaterThan(report.accessErrorCount, 0)
+        XCTAssertFalse(report.snapshot.isComplete)
+    }
+
+    func testResourceMetadataAccessErrorIsDistinctFromPolicySkipAndMakesSnapshotIncomplete() throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let root = sandbox.appendingPathComponent("Authorized", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let safeFile = root.appendingPathComponent("safe.txt")
+        let deniedFile = root.appendingPathComponent("metadata-denied.txt")
+        try Data("safe".utf8).write(to: safeFile)
+        try Data("denied".utf8).write(to: deniedFile)
+
+        let report = LocalFileIndexer(
+            options: LocalFileIndexingOptions(maximumFiles: 100, includeHidden: false),
+            resourceValueLoader: { candidate, keys in
+                if candidate.lastPathComponent == deniedFile.lastPathComponent,
+                   keys.contains(.isRegularFileKey) {
+                    throw SyntheticMetadataError.denied
+                }
+                return try candidate.resourceValues(forKeys: keys)
+            }
+        ).buildSnapshot(
+            roots: [root],
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertEqual(
+            report.snapshot.entries.map(\.path),
+            [safeFile.resolvingSymlinksInPath().standardizedFileURL.path]
+        )
+        XCTAssertEqual(report.skippedCount, 0)
+        XCTAssertEqual(report.accessErrorCount, 1)
+        XCTAssertFalse(report.snapshot.isComplete)
     }
 
     func testStoreLoadFailsClosedWhenEntryFallsOutsideDeclaredRoots() throws {
@@ -296,4 +372,8 @@ final class LocalIndexTests: XCTestCase {
             ofItemAtPath: url.path
         )
     }
+}
+
+private enum SyntheticMetadataError: Error {
+    case denied
 }

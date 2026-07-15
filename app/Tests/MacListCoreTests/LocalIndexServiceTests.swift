@@ -73,6 +73,61 @@ final class LocalIndexServiceTests: XCTestCase {
         XCTAssertEqual(readyAt, generatedAt)
     }
 
+    func testBootstrapRejectsCacheWhenAuthorizedFolderWasRecreatedAtSamePath() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folder = try makeAuthorizedFolder(in: sandbox, name: "客户资料")
+        let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+        let revision = UUID()
+        let snapshot = makeSnapshot(
+            root: folder,
+            revision: revision,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let stores = makeStores(in: sandbox)
+        try stores.authorized.save(AuthorizedFolderSet(
+            revision: revision,
+            folders: [bookmark]
+        ))
+        try stores.index.save(snapshot)
+
+        try FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(
+            at: folder,
+            withIntermediateDirectories: true
+        )
+        XCTAssertTrue(FileManager.default.createFile(
+            atPath: folder.appendingPathComponent("冒名文件.pdf").path,
+            contents: Data("replacement".utf8)
+        ))
+
+        let provider = LocalIndexProvider()
+        let builder = ImmediateLocalIndexBuilder()
+        let service = LocalIndexService(
+            provider: provider,
+            authorizedFolderStore: stores.authorized,
+            indexStore: stores.index,
+            indexer: builder
+        )
+
+        await service.bootstrap()
+
+        XCTAssertEqual(
+            provider.snapshot,
+            .empty,
+            "a different folder recreated at the same path must not inherit the old cache"
+        )
+        XCTAssertEqual(builder.invocationCount, 0)
+        XCTAssertNil(
+            try stores.index.loadIfPresent(),
+            "a cache tied to a replaced root must be deleted, not merely hidden"
+        )
+        guard case .needsAuthorization = await service.state else {
+            return XCTFail("a stale bookmark must require the user to authorize the folder again")
+        }
+    }
+
     func testBootstrapRejectsMismatchedCacheWithoutAutomaticallyScanning() async throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }
@@ -104,6 +159,47 @@ final class LocalIndexServiceTests: XCTestCase {
         XCTAssertEqual(builder.invocationCount, 0)
         guard case .needsRefresh(folderCount: 1) = await service.state else {
             return XCTFail("a cache from another authorization revision must not be trusted")
+        }
+    }
+
+    func testBootstrapTreatsPreviousSemanticIndexFormatAsNeedsRefresh() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folder = try makeAuthorizedFolder(in: sandbox, name: "客户资料")
+        let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+        let revision = UUID()
+        let stores = makeStores(in: sandbox)
+        try stores.authorized.save(AuthorizedFolderSet(
+            revision: revision,
+            folders: [bookmark]
+        ))
+        try stores.index.save(LocalIndexSnapshot(
+            formatVersion: 1,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            roots: [folder.path],
+            entries: [LocalIndexEntry(path: folder.appendingPathComponent("旧结果.pdf").path)],
+            rootRevision: revision
+        ))
+        let provider = LocalIndexProvider()
+        let builder = ImmediateLocalIndexBuilder()
+        let service = LocalIndexService(
+            provider: provider,
+            authorizedFolderStore: stores.authorized,
+            indexStore: stores.index,
+            indexer: builder
+        )
+
+        await service.bootstrap()
+
+        XCTAssertEqual(provider.snapshot, .empty)
+        XCTAssertEqual(builder.invocationCount, 0)
+        XCTAssertNil(
+            try stores.index.loadIfPresent(),
+            "an obsolete semantic cache should be removed before the user rebuilds"
+        )
+        guard case .needsRefresh(folderCount: 1) = await service.state else {
+            return XCTFail("a supported migration path must request refresh instead of failing")
         }
     }
 
@@ -273,6 +369,94 @@ final class LocalIndexServiceTests: XCTestCase {
         }
     }
 
+    func testRootReplacementDuringRefreshClearsPreviouslyLoadedProviderAndCache() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folder = try makeAuthorizedFolder(in: sandbox, name: "客户资料")
+        let movedFolder = sandbox.appendingPathComponent("客户资料-原目录", isDirectory: true)
+        let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+        let revision = UUID()
+        let previousSnapshot = makeSnapshot(
+            root: folder,
+            revision: revision,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let stores = makeStores(in: sandbox)
+        try stores.authorized.save(AuthorizedFolderSet(
+            revision: revision,
+            folders: [bookmark]
+        ))
+        try stores.index.save(previousSnapshot)
+        let provider = LocalIndexProvider(snapshot: previousSnapshot)
+        let builder = BlockingCancellationIgnoringBuilder()
+        let service = LocalIndexService(
+            provider: provider,
+            authorizedFolderStore: stores.authorized,
+            indexStore: stores.index,
+            indexer: builder
+        )
+        let refresh = Task { await service.rebuild() }
+        XCTAssertTrue(builder.waitUntilBuildStarts(timeout: 2))
+        defer { builder.finishBuild() }
+        XCTAssertEqual(
+            provider.snapshot,
+            .empty,
+            "a refresh must retire the previously published provider before scanning"
+        )
+        XCTAssertNil(
+            try stores.index.loadIfPresent(),
+            "a refresh must retire the previous cache before the root can change"
+        )
+
+        try FileManager.default.moveItem(at: folder, to: movedFolder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(
+            atPath: folder.appendingPathComponent("冒名文件.pdf").path,
+            contents: Data("replacement".utf8)
+        ))
+        builder.finishBuild()
+        await refresh.value
+
+        XCTAssertEqual(provider.snapshot, .empty)
+        XCTAssertNil(
+            try stores.index.loadIfPresent(),
+            "identity loss during refresh must erase the previously trusted cache"
+        )
+        guard case .needsAuthorization = await service.state else {
+            return XCTFail("identity loss must require renewed authorization")
+        }
+    }
+
+    func testIdentityIsVerifiedAgainImmediatelyBeforeCommit() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folder = try makeAuthorizedFolder(in: sandbox, name: "客户资料")
+        let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+        let stores = makeStores(in: sandbox)
+        let provider = LocalIndexProvider()
+        let validator = SequencedRootIdentityValidator(failingInvocation: 3)
+        let service = LocalIndexService(
+            provider: provider,
+            authorizedFolderStore: stores.authorized,
+            indexStore: stores.index,
+            indexer: ImmediateLocalIndexBuilder(),
+            rootIdentityValidator: { identities in
+                validator.validate(identities)
+            }
+        )
+
+        try await service.replaceAuthorizedFolders([bookmark])
+
+        XCTAssertGreaterThanOrEqual(validator.invocationCount, 3)
+        XCTAssertEqual(provider.snapshot, .empty)
+        XCTAssertNil(try stores.index.loadIfPresent())
+        guard case .needsAuthorization = await service.state else {
+            return XCTFail("a root that becomes invalid at the commit boundary must not publish")
+        }
+    }
+
     func testReplacingAuthorizedFoldersPersistsRevisionRebuildsAndPublishesReadySnapshot() async throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }
@@ -307,11 +491,15 @@ final class LocalIndexServiceTests: XCTestCase {
             name: String,
             reachedLimit: Bool,
             reachedVisitLimit: Bool,
-            inaccessibleRootCount: Int
+            inaccessibleRootCount: Int,
+            snapshotIsComplete: Bool,
+            accessErrorCount: Int
         )] = [
-            ("file limit", true, false, 0),
-            ("visit limit", false, true, 0),
-            ("inaccessible root", false, false, 1),
+            ("file limit", true, false, 0, true, 0),
+            ("visit limit", false, true, 0, true, 0),
+            ("inaccessible root", false, false, 1, true, 0),
+            ("snapshot access error", false, false, 0, false, 1),
+            ("counter and snapshot disagree", false, false, 0, true, 1),
         ]
 
         for scenario in scenarios {
@@ -324,7 +512,9 @@ final class LocalIndexServiceTests: XCTestCase {
             let builder = ImmediateLocalIndexBuilder(
                 reachedLimit: scenario.reachedLimit,
                 reachedVisitLimit: scenario.reachedVisitLimit,
-                inaccessibleRootCount: scenario.inaccessibleRootCount
+                inaccessibleRootCount: scenario.inaccessibleRootCount,
+                snapshotIsComplete: scenario.snapshotIsComplete,
+                accessErrorCount: scenario.accessErrorCount
             )
             let stores = makeStores(in: sandbox)
             let service = LocalIndexService(
@@ -425,18 +615,24 @@ private final class ImmediateLocalIndexBuilder: LocalIndexBuilding, @unchecked S
     private let reachedLimit: Bool
     private let reachedVisitLimit: Bool
     private let inaccessibleRootCount: Int
+    private let snapshotIsComplete: Bool
+    private let accessErrorCount: Int
     private var storedInvocationCount = 0
 
     init(
         wasCancelled: Bool = false,
         reachedLimit: Bool = false,
         reachedVisitLimit: Bool = false,
-        inaccessibleRootCount: Int = 0
+        inaccessibleRootCount: Int = 0,
+        snapshotIsComplete: Bool = true,
+        accessErrorCount: Int = 0
     ) {
         self.wasCancelled = wasCancelled
         self.reachedLimit = reachedLimit
         self.reachedVisitLimit = reachedVisitLimit
         self.inaccessibleRootCount = inaccessibleRootCount
+        self.snapshotIsComplete = snapshotIsComplete
+        self.accessErrorCount = accessErrorCount
     }
 
     var invocationCount: Int {
@@ -464,14 +660,41 @@ private final class ImmediateLocalIndexBuilder: LocalIndexBuilding, @unchecked S
                 entries: canonicalRoots.first.map {
                     [LocalIndexEntry(path: $0.appendingPathComponent("最终清单.xlsx").path)]
                 } ?? [],
-                rootRevision: rootRevision
+                rootRevision: rootRevision,
+                isComplete: snapshotIsComplete
             ),
             skippedCount: 0,
             inaccessibleRootCount: inaccessibleRootCount,
             reachedLimit: reachedLimit,
             reachedVisitLimit: reachedVisitLimit,
+            accessErrorCount: accessErrorCount,
             wasCancelled: wasCancelled
         )
+    }
+}
+
+private final class SequencedRootIdentityValidator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingInvocation: Int
+    private var storedInvocationCount = 0
+
+    init(failingInvocation: Int) {
+        self.failingInvocation = failingInvocation
+    }
+
+    var invocationCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedInvocationCount
+    }
+
+    func validate(_ identities: [LocalIndexRootIdentity]) -> Bool {
+        lock.lock()
+        storedInvocationCount += 1
+        let invocation = storedInvocationCount
+        lock.unlock()
+        return invocation != failingInvocation
+            && identities.allSatisfy { $0.matchesCurrentDirectory() }
     }
 }
 

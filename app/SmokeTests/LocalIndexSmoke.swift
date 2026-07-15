@@ -42,6 +42,93 @@ enum LocalIndexSmoke {
         )
         let canonicalOutsidePath = outsideFile.resolvingSymlinksInPath().standardizedFileURL.path
         precondition(!report.snapshot.entries.contains { $0.path == canonicalOutsidePath })
+        precondition(
+            report.snapshot.isComplete,
+            "policy-based skips must not make an otherwise successful index partial"
+        )
+        precondition(
+            report.accessErrorCount == 0,
+            "policy-based skips must remain distinct from filesystem access errors"
+        )
+
+        let partialRoot = sandbox.appendingPathComponent(
+            "PartialCustomerFiles",
+            isDirectory: true
+        )
+        let blockedChild = partialRoot.appendingPathComponent(
+            "BlockedProject",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(
+            at: blockedChild,
+            withIntermediateDirectories: true
+        )
+        let safePartialFile = partialRoot.appendingPathComponent("visible.pdf")
+        try Data("safe metadata fixture".utf8).write(to: safePartialFile)
+        try Data("blocked metadata fixture".utf8).write(
+            to: blockedChild.appendingPathComponent("hidden-from-enumerator.pdf")
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o000)],
+            ofItemAtPath: blockedChild.path
+        )
+        defer {
+            try? fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o700)],
+                ofItemAtPath: blockedChild.path
+            )
+        }
+
+        let partialReport = LocalFileIndexer(
+            options: LocalFileIndexingOptions(maximumFiles: 100, includeHidden: false)
+        ).buildSnapshot(
+            roots: [partialRoot],
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_001)
+        )
+        let canonicalSafePartialPath = safePartialFile
+            .resolvingSymlinksInPath()
+            .standardizedFileURL.path
+        precondition(
+            partialReport.snapshot.entries.contains { $0.path == canonicalSafePartialPath },
+            "safe results collected before or alongside an enumeration error must be retained"
+        )
+        precondition(
+            !partialReport.snapshot.isComplete,
+            "a child-directory enumeration error must make the snapshot partial"
+        )
+        precondition(partialReport.accessErrorCount > 0)
+
+        let metadataRoot = sandbox.appendingPathComponent(
+            "MetadataAccessError",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: metadataRoot, withIntermediateDirectories: true)
+        let metadataSafeFile = metadataRoot.appendingPathComponent("safe.txt")
+        let metadataDeniedFile = metadataRoot.appendingPathComponent("metadata-denied.txt")
+        try Data("safe".utf8).write(to: metadataSafeFile)
+        try Data("denied".utf8).write(to: metadataDeniedFile)
+
+        let metadataErrorReport = LocalFileIndexer(
+            options: LocalFileIndexingOptions(maximumFiles: 100, includeHidden: false),
+            resourceValueLoader: { candidate, keys in
+                if candidate.lastPathComponent == metadataDeniedFile.lastPathComponent,
+                   keys.contains(.isRegularFileKey) {
+                    throw SyntheticLocalIndexMetadataError.denied
+                }
+                return try candidate.resourceValues(forKeys: keys)
+            }
+        ).buildSnapshot(
+            roots: [metadataRoot],
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_002)
+        )
+        precondition(
+            metadataErrorReport.snapshot.entries.map(\.path) == [
+                metadataSafeFile.resolvingSymlinksInPath().standardizedFileURL.path
+            ]
+        )
+        precondition(metadataErrorReport.skippedCount == 0)
+        precondition(metadataErrorReport.accessErrorCount == 1)
+        precondition(!metadataErrorReport.snapshot.isComplete)
 
         let matches = LocalIndexProvider(snapshot: report.snapshot)
             .matchingFiles("远航 阿曼升级", limit: 10)
@@ -160,4 +247,8 @@ enum LocalIndexSmoke {
             precondition(error == expected)
         }
     }
+}
+
+private enum SyntheticLocalIndexMetadataError: Error {
+    case denied
 }

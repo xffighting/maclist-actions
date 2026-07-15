@@ -144,11 +144,17 @@ final class LocalIndexRootPolicyTests: XCTestCase {
     func testRejectsMissingFilesAndUnreadableDirectories() throws {
         let sandbox = try makeSandbox()
         let unreadable = sandbox.appendingPathComponent("unreadable", isDirectory: true)
+        let readableButNotSearchable = sandbox.appendingPathComponent(
+            "readable-but-not-searchable",
+            isDirectory: true
+        )
         defer {
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o700)],
-                ofItemAtPath: unreadable.path
-            )
+            for protectedDirectory in [unreadable, readableButNotSearchable] {
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: NSNumber(value: 0o700)],
+                    ofItemAtPath: protectedDirectory.path
+                )
+            }
             try? FileManager.default.removeItem(at: sandbox)
         }
 
@@ -158,15 +164,24 @@ final class LocalIndexRootPolicyTests: XCTestCase {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         try Data("file".utf8).write(to: file)
         try FileManager.default.createDirectory(at: unreadable, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: readableButNotSearchable,
+            withIntermediateDirectories: true
+        )
         try FileManager.default.setAttributes(
             [.posixPermissions: NSNumber(value: 0o000)],
             ofItemAtPath: unreadable.path
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o400)],
+            ofItemAtPath: readableButNotSearchable.path
         )
 
         let policy = LocalIndexRootPolicy(homeDirectory: home, fileManager: .default, maxRoots: 8)
         assertPolicyRejects([missing], policy: policy)
         assertPolicyRejects([file], policy: policy)
         assertPolicyRejects([unreadable], policy: policy)
+        assertPolicyRejects([readableButNotSearchable], policy: policy)
     }
 
     func testRejectsMoreThanMaximumIndependentRootsAfterDeduplication() throws {

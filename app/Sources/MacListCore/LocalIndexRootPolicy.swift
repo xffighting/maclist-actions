@@ -48,7 +48,11 @@ public struct LocalIndexRootPolicy: @unchecked Sendable {
                 throw LocalIndexRootPolicyError.invalidRoot(canonical.path)
             }
             guard fileManager.isReadableFile(atPath: canonical.path),
-                  Self.hasReadablePermissionBit(canonical, fileManager: fileManager) else {
+                  fileManager.isExecutableFile(atPath: canonical.path),
+                  Self.hasReadableAndSearchablePermissionBits(
+                    canonical,
+                    fileManager: fileManager
+                  ) else {
                 throw LocalIndexRootPolicyError.unreadableRoot(canonical.path)
             }
             if seen.insert(canonical.path).inserted {
@@ -127,7 +131,7 @@ public struct LocalIndexRootPolicy: @unchecked Sendable {
         path == root || path.hasPrefix(root + "/")
     }
 
-    private static func hasReadablePermissionBit(
+    private static func hasReadableAndSearchablePermissionBits(
         _ url: URL,
         fileManager: FileManager
     ) -> Bool {
@@ -135,6 +139,7 @@ public struct LocalIndexRootPolicy: @unchecked Sendable {
             .attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber else {
             return false
         }
-        return permissions.intValue & 0o444 != 0
+        let mode = permissions.intValue
+        return mode & 0o444 != 0 && mode & 0o111 != 0
     }
 }

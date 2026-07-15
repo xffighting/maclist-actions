@@ -5,6 +5,7 @@ public enum AuthorizedFolderBookmarkError: Error, Equatable {
     case invalidFolder
     case unreadableFolder
     case invalidBookmark
+    case staleBookmark
 }
 
 public struct AuthorizedFolderBookmark: Codable, Equatable, Identifiable, Sendable {
@@ -82,6 +83,9 @@ public struct AuthorizedFolderBookmark: Codable, Equatable, Identifiable, Sendab
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
+        guard !isStale else {
+            throw AuthorizedFolderBookmarkError.staleBookmark
+        }
         let canonicalFolder = resolved.standardizedFileURL
             .resolvingSymlinksInPath()
             .standardizedFileURL

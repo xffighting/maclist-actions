@@ -9,11 +9,17 @@ enum LocalIndexRootPolicySmoke {
             isDirectory: true
         )
         let unreadable = sandbox.appendingPathComponent("unreadable", isDirectory: true)
+        let readableButNotSearchable = sandbox.appendingPathComponent(
+            "readable-but-not-searchable",
+            isDirectory: true
+        )
         defer {
-            try? fileManager.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o700)],
-                ofItemAtPath: unreadable.path
-            )
+            for protectedDirectory in [unreadable, readableButNotSearchable] {
+                try? fileManager.setAttributes(
+                    [.posixPermissions: NSNumber(value: 0o700)],
+                    ofItemAtPath: protectedDirectory.path
+                )
+            }
             try? fileManager.removeItem(at: sandbox)
         }
         try fileManager.createDirectory(at: sandbox, withIntermediateDirectories: true)
@@ -99,13 +105,22 @@ enum LocalIndexRootPolicySmoke {
         let missing = sandbox.appendingPathComponent("missing", isDirectory: true)
         try Data("file".utf8).write(to: file)
         try fileManager.createDirectory(at: unreadable, withIntermediateDirectories: true)
+        try fileManager.createDirectory(
+            at: readableButNotSearchable,
+            withIntermediateDirectories: true
+        )
         try fileManager.setAttributes(
             [.posixPermissions: NSNumber(value: 0o000)],
             ofItemAtPath: unreadable.path
         )
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o400)],
+            ofItemAtPath: readableButNotSearchable.path
+        )
         try expectPolicyRejection([missing], by: policy)
         try expectPolicyRejection([file], by: policy)
         try expectPolicyRejection([unreadable], by: policy)
+        try expectPolicyRejection([readableButNotSearchable], by: policy)
 
         let independentRoots = (1...3).map {
             sandbox.appendingPathComponent("independent-\($0)", isDirectory: true)

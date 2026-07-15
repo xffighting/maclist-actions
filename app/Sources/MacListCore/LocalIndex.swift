@@ -43,7 +43,10 @@ public struct LocalIndexEntry: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct LocalIndexSnapshot: Codable, Equatable, Sendable {
-    public static let currentFormatVersion = 1
+    // Version 2 invalidates snapshots produced before access failures were
+    // represented in the completeness semantics. Version 1 may silently omit
+    // unreadable subtrees, so it must be rebuilt instead of reused as ready.
+    public static let currentFormatVersion = 2
 
     public let formatVersion: Int
     public let generatedAt: Date
@@ -107,6 +110,7 @@ public struct LocalIndexingReport: Sendable {
     public let snapshot: LocalIndexSnapshot
     public let skippedCount: Int
     public let inaccessibleRootCount: Int
+    public let accessErrorCount: Int
     public let reachedLimit: Bool
     public let reachedVisitLimit: Bool
     public let wasCancelled: Bool
@@ -117,11 +121,13 @@ public struct LocalIndexingReport: Sendable {
         inaccessibleRootCount: Int,
         reachedLimit: Bool,
         reachedVisitLimit: Bool = false,
+        accessErrorCount: Int = 0,
         wasCancelled: Bool = false
     ) {
         self.snapshot = snapshot
         self.skippedCount = skippedCount
         self.inaccessibleRootCount = inaccessibleRootCount
+        self.accessErrorCount = accessErrorCount
         self.reachedLimit = reachedLimit
         self.reachedVisitLimit = reachedVisitLimit
         self.wasCancelled = wasCancelled
@@ -150,6 +156,7 @@ public struct LocalFileIndexingOptions: Equatable, Sendable {
 public final class LocalFileIndexer: @unchecked Sendable {
     private let fileManager: FileManager
     private let options: LocalFileIndexingOptions
+    private let resourceValueLoader: (URL, Set<URLResourceKey>) throws -> URLResourceValues
 
     public init(
         fileManager: FileManager = .default,
@@ -157,6 +164,22 @@ public final class LocalFileIndexer: @unchecked Sendable {
     ) {
         self.fileManager = fileManager
         self.options = options
+        resourceValueLoader = { url, keys in
+            try url.resourceValues(forKeys: keys)
+        }
+    }
+
+    init(
+        fileManager: FileManager = .default,
+        options: LocalFileIndexingOptions = LocalFileIndexingOptions(),
+        resourceValueLoader: @escaping (
+            URL,
+            Set<URLResourceKey>
+        ) throws -> URLResourceValues
+    ) {
+        self.fileManager = fileManager
+        self.options = options
+        self.resourceValueLoader = resourceValueLoader
     }
 
     public func buildSnapshot(
@@ -165,9 +188,11 @@ public final class LocalFileIndexer: @unchecked Sendable {
         rootRevision: UUID? = nil,
         isCancelled: @Sendable () -> Bool = { false }
     ) -> LocalIndexingReport {
-        let authorizedRoots = normalizedReadableRoots(roots)
+        let normalizedRoots = normalizedReadableRoots(roots)
+        let authorizedRoots = normalizedRoots.urls
         var entriesByPath: [String: LocalIndexEntry] = [:]
         var skippedCount = 0
+        var accessErrorCount = 0
         var reachedLimit = false
         var reachedVisitLimit = false
         var wasCancelled = false
@@ -192,8 +217,12 @@ public final class LocalFileIndexer: @unchecked Sendable {
                 at: root,
                 includingPropertiesForKeys: Array(requiredResourceKeys),
                 options: enumerationOptions,
-                errorHandler: { _, _ in true }
+                errorHandler: { _, _ in
+                    accessErrorCount += 1
+                    return true
+                }
             ) else {
+                accessErrorCount += 1
                 continue
             }
 
@@ -213,7 +242,7 @@ public final class LocalFileIndexer: @unchecked Sendable {
                 }
 
                 do {
-                    let values = try candidate.resourceValues(forKeys: requiredResourceKeys)
+                    let values = try resourceValueLoader(candidate, requiredResourceKeys)
                     if values.isSymbolicLink == true {
                         skippedCount += 1
                         if values.isDirectory == true { enumerator.skipDescendants() }
@@ -233,16 +262,23 @@ public final class LocalFileIndexer: @unchecked Sendable {
                         skippedCount += 1
                         continue
                     }
-                    let modifiedAt = try? candidate.resourceValues(
-                        forKeys: [.contentModificationDateKey]
-                    ).contentModificationDate
+                    let modifiedAt: Date?
+                    do {
+                        modifiedAt = try resourceValueLoader(
+                            candidate,
+                            [.contentModificationDateKey]
+                        ).contentModificationDate
+                    } catch {
+                        accessErrorCount += 1
+                        modifiedAt = nil
+                    }
                     entriesByPath[canonicalURL.path] = LocalIndexEntry(
                         path: canonicalURL.path,
                         displayName: canonicalURL.lastPathComponent,
                         modifiedAt: modifiedAt
                     )
                 } catch {
-                    skippedCount += 1
+                    accessErrorCount += 1
                 }
             }
         }
@@ -260,42 +296,51 @@ public final class LocalFileIndexer: @unchecked Sendable {
                 rootRevision: rootRevision,
                 isComplete: !reachedLimit
                     && !reachedVisitLimit
-                    && max(0, roots.count - authorizedRoots.count) == 0
+                    && normalizedRoots.inaccessibleCount == 0
+                    && accessErrorCount == 0
             ),
             skippedCount: skippedCount,
-            inaccessibleRootCount: max(0, roots.count - authorizedRoots.count),
+            inaccessibleRootCount: normalizedRoots.inaccessibleCount,
             reachedLimit: reachedLimit,
             reachedVisitLimit: reachedVisitLimit,
+            accessErrorCount: accessErrorCount,
             wasCancelled: wasCancelled
         )
     }
 
-    private func normalizedReadableRoots(_ roots: [URL]) -> [URL] {
+    private func normalizedReadableRoots(
+        _ roots: [URL]
+    ) -> (urls: [URL], inaccessibleCount: Int) {
         var seen = Set<String>()
+        var inaccessibleCount = 0
         let readableRoots: [URL] = roots.compactMap { root -> URL? in
             let canonical = LocalIndexPathScope.canonicalURL(root)
             guard canonical.isFileURL,
-                  canonical.path.hasPrefix("/"),
-                  seen.insert(canonical.path).inserted else {
+                  canonical.path.hasPrefix("/") else {
+                inaccessibleCount += 1
                 return nil
             }
+            guard seen.insert(canonical.path).inserted else { return nil }
             var isDirectory: ObjCBool = false
             guard fileManager.fileExists(
                 atPath: canonical.path,
                 isDirectory: &isDirectory
             ), isDirectory.boolValue,
-            fileManager.isReadableFile(atPath: canonical.path) else {
+            fileManager.isReadableFile(atPath: canonical.path),
+            fileManager.isExecutableFile(atPath: canonical.path) else {
+                inaccessibleCount += 1
                 return nil
             }
             return canonical
         }
         let sortedRoots = readableRoots.sorted { $0.path < $1.path }
-        return sortedRoots.reduce(into: [URL]()) { accepted, candidate in
+        let minimized = sortedRoots.reduce(into: [URL]()) { accepted, candidate in
             guard !accepted.contains(where: {
                 LocalIndexPathScope.contains(path: candidate.path, root: $0.path)
             }) else { return }
             accepted.append(candidate)
         }
+        return (minimized, inaccessibleCount)
     }
 
     private func isInside(_ candidate: URL, root: URL) -> Bool {

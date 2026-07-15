@@ -6,18 +6,24 @@ private final class ServiceSmokeBuilder: LocalIndexBuilding, @unchecked Sendable
     private let reachedLimit: Bool
     private let reachedVisitLimit: Bool
     private let inaccessibleRootCount: Int
+    private let accessErrorCount: Int
+    private let snapshotIsComplete: Bool
     private var storedInvocationCount = 0
 
     init(
         returnsCancelledReport: Bool = false,
         reachedLimit: Bool = false,
         reachedVisitLimit: Bool = false,
-        inaccessibleRootCount: Int = 0
+        inaccessibleRootCount: Int = 0,
+        accessErrorCount: Int = 0,
+        snapshotIsComplete: Bool = true
     ) {
         self.returnsCancelledReport = returnsCancelledReport
         self.reachedLimit = reachedLimit
         self.reachedVisitLimit = reachedVisitLimit
         self.inaccessibleRootCount = inaccessibleRootCount
+        self.accessErrorCount = accessErrorCount
+        self.snapshotIsComplete = snapshotIsComplete
     }
 
     var invocationCount: Int {
@@ -45,12 +51,14 @@ private final class ServiceSmokeBuilder: LocalIndexBuilding, @unchecked Sendable
                 entries: canonicalRoots.first.map {
                     [LocalIndexEntry(path: $0.appendingPathComponent("最终清单.xlsx").path)]
                 } ?? [],
-                rootRevision: rootRevision
+                rootRevision: rootRevision,
+                isComplete: snapshotIsComplete
             ),
             skippedCount: 0,
             inaccessibleRootCount: inaccessibleRootCount,
             reachedLimit: reachedLimit,
             reachedVisitLimit: reachedVisitLimit,
+            accessErrorCount: accessErrorCount,
             wasCancelled: returnsCancelledReport
         )
     }
@@ -101,9 +109,13 @@ enum LocalIndexServiceSmoke {
     static func main() async throws {
         try await bootstrapWithoutAuthorizationDoesNotBuild()
         try await matchingRevisionLoadsCache()
+        try await recreatedRootAtSamePathDoesNotLoadCache()
         try await mismatchedRevisionDoesNotLoadOrBuild()
+        try await previousSemanticFormatNeedsRefresh()
         try await cancelledReportDoesNotCommit()
         try await rootReplacementDuringBuildDoesNotCommit()
+        try await rootReplacementDuringRefreshClearsOldCache()
+        try await identityIsVerifiedAtCommitBoundary()
         try await replacementCancellationDeletesOldIndex()
         try await replacementPersistsRevisionAndPublishes()
         try await incompleteReportsPublishPartialAndPersist()
@@ -179,6 +191,60 @@ enum LocalIndexServiceSmoke {
         }
     }
 
+    private static func recreatedRootAtSamePathDoesNotLoadCache() async throws {
+        try await withSandbox("recreated-root-bootstrap") { sandbox in
+            let folder = try makeFolder(in: sandbox)
+            let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+            let revision = UUID()
+            let snapshot = makeSnapshot(
+                root: folder,
+                revision: revision,
+                generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+            let stores = makeStores(in: sandbox)
+            try stores.authorized.save(AuthorizedFolderSet(
+                revision: revision,
+                folders: [bookmark]
+            ))
+            try stores.index.save(snapshot)
+
+            try FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(
+                at: folder,
+                withIntermediateDirectories: true
+            )
+            precondition(FileManager.default.createFile(
+                atPath: folder.appendingPathComponent("冒名文件.pdf").path,
+                contents: Data("replacement".utf8)
+            ))
+
+            let provider = LocalIndexProvider()
+            let builder = ServiceSmokeBuilder()
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: builder
+            )
+
+            await service.bootstrap()
+
+            precondition(
+                provider.snapshot == .empty,
+                "a different folder recreated at the same path must not inherit the old cache"
+            )
+            precondition(builder.invocationCount == 0)
+            let remainingIndex = try stores.index.loadIfPresent()
+            precondition(
+                remainingIndex == nil,
+                "cache tied to a replaced root must be erased"
+            )
+            guard case .needsAuthorization = await service.state else {
+                preconditionFailure("a stale bookmark must require renewed authorization")
+            }
+        }
+    }
+
     private static func mismatchedRevisionDoesNotLoadOrBuild() async throws {
         try await withSandbox("mismatch") { sandbox in
             let folder = try makeFolder(in: sandbox)
@@ -208,6 +274,44 @@ enum LocalIndexServiceSmoke {
             precondition(builder.invocationCount == 0)
             guard case .needsRefresh(folderCount: 1) = await service.state else {
                 preconditionFailure("mismatched cache must wait for an explicit rebuild")
+            }
+        }
+    }
+
+    private static func previousSemanticFormatNeedsRefresh() async throws {
+        try await withSandbox("previous-format") { sandbox in
+            let folder = try makeFolder(in: sandbox)
+            let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+            let revision = UUID()
+            let stores = makeStores(in: sandbox)
+            try stores.authorized.save(AuthorizedFolderSet(
+                revision: revision,
+                folders: [bookmark]
+            ))
+            try stores.index.save(LocalIndexSnapshot(
+                formatVersion: 1,
+                generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                roots: [folder.path],
+                entries: [LocalIndexEntry(path: folder.appendingPathComponent("旧结果.pdf").path)],
+                rootRevision: revision
+            ))
+            let provider = LocalIndexProvider()
+            let builder = ServiceSmokeBuilder()
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: builder
+            )
+
+            await service.bootstrap()
+
+            precondition(provider.snapshot == .empty)
+            precondition(builder.invocationCount == 0)
+            let remainingIndex = try stores.index.loadIfPresent()
+            precondition(remainingIndex == nil)
+            guard case .needsRefresh(folderCount: 1) = await service.state else {
+                preconditionFailure("previous semantic format must request refresh")
             }
         }
     }
@@ -340,6 +444,85 @@ enum LocalIndexServiceSmoke {
         }
     }
 
+    private static func rootReplacementDuringRefreshClearsOldCache() async throws {
+        try await withSandbox("root-replaced-refresh") { sandbox in
+            let folder = try makeFolder(in: sandbox)
+            let movedFolder = sandbox.appendingPathComponent("客户资料-原目录", isDirectory: true)
+            let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+            let revision = UUID()
+            let oldSnapshot = makeSnapshot(
+                root: folder,
+                revision: revision,
+                generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+            let stores = makeStores(in: sandbox)
+            try stores.authorized.save(AuthorizedFolderSet(
+                revision: revision,
+                folders: [bookmark]
+            ))
+            try stores.index.save(oldSnapshot)
+            let provider = LocalIndexProvider(snapshot: oldSnapshot)
+            let builder = ServiceSmokeBlockingBuilder()
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: builder
+            )
+            let refresh = Task { await service.rebuild() }
+            precondition(builder.waitUntilBuildStarts())
+            defer { builder.finishBuild() }
+            precondition(provider.snapshot == .empty)
+            let cacheDuringRefresh = try stores.index.loadIfPresent()
+            precondition(cacheDuringRefresh == nil)
+
+            try FileManager.default.moveItem(at: folder, to: movedFolder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            precondition(FileManager.default.createFile(
+                atPath: folder.appendingPathComponent("冒名文件.pdf").path,
+                contents: Data("replacement".utf8)
+            ))
+            builder.finishBuild()
+            await refresh.value
+
+            precondition(provider.snapshot == .empty)
+            let remainingIndex = try stores.index.loadIfPresent()
+            precondition(remainingIndex == nil)
+            guard case .needsAuthorization = await service.state else {
+                preconditionFailure("identity loss must require renewed authorization")
+            }
+        }
+    }
+
+    private static func identityIsVerifiedAtCommitBoundary() async throws {
+        try await withSandbox("precommit-identity") { sandbox in
+            let folder = try makeFolder(in: sandbox)
+            let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+            let stores = makeStores(in: sandbox)
+            let provider = LocalIndexProvider()
+            let validator = ServiceSmokeIdentityValidator(failingInvocation: 3)
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: ServiceSmokeBuilder(),
+                rootIdentityValidator: { identities in
+                    validator.validate(identities)
+                }
+            )
+
+            try await service.replaceAuthorizedFolders([bookmark])
+
+            precondition(validator.invocationCount >= 3)
+            precondition(provider.snapshot == .empty)
+            let remainingIndex = try stores.index.loadIfPresent()
+            precondition(remainingIndex == nil)
+            guard case .needsAuthorization = await service.state else {
+                preconditionFailure("precommit identity failure must not publish")
+            }
+        }
+    }
+
     private static func replacementPersistsRevisionAndPublishes() async throws {
         try await withSandbox("replace") { sandbox in
             let folder = try makeFolder(in: sandbox)
@@ -373,11 +556,14 @@ enum LocalIndexServiceSmoke {
             name: String,
             reachedLimit: Bool,
             reachedVisitLimit: Bool,
-            inaccessibleRootCount: Int
+            inaccessibleRootCount: Int,
+            accessErrorCount: Int,
+            snapshotIsComplete: Bool
         )] = [
-            ("file-limit", true, false, 0),
-            ("visit-limit", false, true, 0),
-            ("inaccessible-root", false, false, 1),
+            ("file-limit", true, false, 0, 0, true),
+            ("visit-limit", false, true, 0, 0, true),
+            ("inaccessible-root", false, false, 1, 0, true),
+            ("access-counter", false, false, 0, 1, true),
         ]
 
         for scenario in scenarios {
@@ -389,7 +575,9 @@ enum LocalIndexServiceSmoke {
                 let builder = ServiceSmokeBuilder(
                     reachedLimit: scenario.reachedLimit,
                     reachedVisitLimit: scenario.reachedVisitLimit,
-                    inaccessibleRootCount: scenario.inaccessibleRootCount
+                    inaccessibleRootCount: scenario.inaccessibleRootCount,
+                    accessErrorCount: scenario.accessErrorCount,
+                    snapshotIsComplete: scenario.snapshotIsComplete
                 )
                 let service = LocalIndexService(
                     provider: provider,
@@ -499,5 +687,30 @@ enum LocalIndexServiceSmoke {
             entries: [LocalIndexEntry(path: root.appendingPathComponent("最终清单.xlsx").path)],
             rootRevision: revision
         )
+    }
+}
+
+private final class ServiceSmokeIdentityValidator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingInvocation: Int
+    private var storedInvocationCount = 0
+
+    init(failingInvocation: Int) {
+        self.failingInvocation = failingInvocation
+    }
+
+    var invocationCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedInvocationCount
+    }
+
+    func validate(_ identities: [LocalIndexRootIdentity]) -> Bool {
+        lock.lock()
+        storedInvocationCount += 1
+        let invocation = storedInvocationCount
+        lock.unlock()
+        return invocation != failingInvocation
+            && identities.allSatisfy { $0.matchesCurrentDirectory() }
     }
 }

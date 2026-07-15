@@ -35,6 +35,11 @@ public enum LocalIndexServiceState: Equatable, Sendable {
     case failed
 }
 
+private struct LocalIndexBuildOutcome: Sendable {
+    let report: LocalIndexingReport
+    let rootIdentityInvalidated: Bool
+}
+
 public actor LocalIndexService {
     public nonisolated let provider: LocalIndexProvider
     public private(set) var state: LocalIndexServiceState = .disabled
@@ -43,8 +48,9 @@ public actor LocalIndexService {
     private let indexStore: LocalIndexStore
     private let indexer: any LocalIndexBuilding
     private let rootPolicy: LocalIndexRootPolicy
+    private let rootIdentityValidator: @Sendable ([LocalIndexRootIdentity]) -> Bool
     private var generation: UInt64 = 0
-    private var runningTask: Task<LocalIndexingReport, Never>?
+    private var runningTask: Task<LocalIndexBuildOutcome, Never>?
 
     public init(
         provider: LocalIndexProvider = LocalIndexProvider(),
@@ -55,14 +61,38 @@ public actor LocalIndexService {
         indexer: any LocalIndexBuilding = LocalFileIndexer(),
         rootPolicy: LocalIndexRootPolicy = LocalIndexRootPolicy()
     ) {
+        self.init(
+            provider: provider,
+            authorizedFolderStore: authorizedFolderStore,
+            indexStore: indexStore,
+            indexer: indexer,
+            rootPolicy: rootPolicy,
+            rootIdentityValidator: { identities in
+                identities.allSatisfy { $0.matchesCurrentDirectory() }
+            }
+        )
+    }
+
+    init(
+        provider: LocalIndexProvider,
+        authorizedFolderStore: AuthorizedFolderStore,
+        indexStore: LocalIndexStore,
+        indexer: any LocalIndexBuilding,
+        rootPolicy: LocalIndexRootPolicy = LocalIndexRootPolicy(),
+        rootIdentityValidator: @escaping @Sendable (
+            [LocalIndexRootIdentity]
+        ) -> Bool
+    ) {
         self.provider = provider
         self.authorizedFolderStore = authorizedFolderStore
         self.indexStore = indexStore
         self.indexer = indexer
         self.rootPolicy = rootPolicy
+        self.rootIdentityValidator = rootIdentityValidator
     }
 
     public func bootstrap() async {
+        invalidateRunningBuild()
         provider.clear()
         do {
             guard let authorization = try authorizedFolderStore.loadSetIfPresent(),
@@ -71,7 +101,20 @@ public actor LocalIndexService {
                 return
             }
             let authorizedRoots = try resolveAuthorizedRoots(authorization)
-            guard let snapshot = try indexStore.loadIfPresent(),
+            let snapshot: LocalIndexSnapshot?
+            do {
+                snapshot = try indexStore.loadIfPresent()
+            } catch let error as LocalIndexStoreError {
+                guard case .unsupportedFormat = error else { throw error }
+                do {
+                    try indexStore.clear()
+                    state = .needsRefresh(folderCount: authorizedRoots.count)
+                } catch {
+                    state = .failed
+                }
+                return
+            }
+            guard let snapshot,
                   snapshot.rootRevision == authorization.revision,
                   Set(snapshot.roots) == Set(authorizedRoots.map(\.path)) else {
                 state = .needsRefresh(folderCount: authorizedRoots.count)
@@ -92,11 +135,11 @@ public actor LocalIndexService {
                 )
             }
         } catch is AuthorizedFolderStoreError {
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
         } catch is AuthorizedFolderBookmarkError {
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
         } catch is LocalIndexRootPolicyError {
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
         } catch {
             state = .failed
         }
@@ -132,8 +175,7 @@ public actor LocalIndexService {
             }
             await rebuild(using: authorization)
         } catch is AuthorizedFolderStoreError {
-            provider.clear()
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
         } catch {
             provider.clear()
             state = .failed
@@ -170,16 +212,13 @@ public actor LocalIndexService {
             authorizedRoots = try resolveAuthorizedRoots(authorization)
             rootIdentities = try authorizedRoots.map(LocalIndexRootIdentity.capture)
         } catch is AuthorizedFolderBookmarkError {
-            provider.clear()
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
             return
         } catch is LocalIndexRootPolicyError {
-            provider.clear()
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
             return
         } catch is LocalIndexRootIdentityError {
-            provider.clear()
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
             return
         } catch {
             provider.clear()
@@ -188,24 +227,38 @@ public actor LocalIndexService {
         }
 
         invalidateRunningBuild()
+        provider.clear()
+        do {
+            // A refresh must not leave an older snapshot searchable while the
+            // authorized root can change underneath the detached scan.
+            try indexStore.clear()
+        } catch {
+            state = .failed
+            return
+        }
         let runID = generation
         state = .indexing(folderCount: authorizedRoots.count)
         let indexer = self.indexer
+        let rootIdentityValidator = self.rootIdentityValidator
         let revision = authorization.revision
         let generatedAt = Date()
         let worker = Task.detached(priority: .utility) {
-            guard rootIdentities.allSatisfy({ $0.matchesCurrentDirectory() }) else {
-                return LocalIndexingReport(
-                    snapshot: LocalIndexSnapshot(
-                        generatedAt: generatedAt,
-                        roots: authorizedRoots.map(\.path),
-                        entries: [],
-                        rootRevision: revision
+            guard rootIdentityValidator(rootIdentities) else {
+                return LocalIndexBuildOutcome(
+                    report: LocalIndexingReport(
+                        snapshot: LocalIndexSnapshot(
+                            generatedAt: generatedAt,
+                            roots: authorizedRoots.map(\.path),
+                            entries: [],
+                            rootRevision: revision,
+                            isComplete: false
+                        ),
+                        skippedCount: 0,
+                        inaccessibleRootCount: authorizedRoots.count,
+                        reachedLimit: false,
+                        wasCancelled: true
                     ),
-                    skippedCount: 0,
-                    inaccessibleRootCount: authorizedRoots.count,
-                    reachedLimit: false,
-                    wasCancelled: true
+                    rootIdentityInvalidated: true
                 )
             }
             let report = indexer.buildSnapshot(
@@ -214,50 +267,70 @@ public actor LocalIndexService {
                 rootRevision: revision,
                 isCancelled: { Task<Never, Never>.isCancelled }
             )
-            guard rootIdentities.allSatisfy({ $0.matchesCurrentDirectory() }) else {
-                return LocalIndexingReport(
-                    snapshot: report.snapshot,
-                    skippedCount: report.skippedCount,
-                    inaccessibleRootCount: report.inaccessibleRootCount,
-                    reachedLimit: report.reachedLimit,
-                    reachedVisitLimit: report.reachedVisitLimit,
-                    wasCancelled: true
+            guard rootIdentityValidator(rootIdentities) else {
+                return LocalIndexBuildOutcome(
+                    report: LocalIndexingReport(
+                        snapshot: report.snapshot,
+                        skippedCount: report.skippedCount,
+                        inaccessibleRootCount: report.inaccessibleRootCount,
+                        reachedLimit: report.reachedLimit,
+                        reachedVisitLimit: report.reachedVisitLimit,
+                        accessErrorCount: report.accessErrorCount,
+                        wasCancelled: true
+                    ),
+                    rootIdentityInvalidated: true
                 )
             }
-            return report
+            return LocalIndexBuildOutcome(
+                report: report,
+                rootIdentityInvalidated: false
+            )
         }
         runningTask = worker
-        let report = await worker.value
+        let outcome = await worker.value
 
         guard runID == generation else { return }
         runningTask = nil
+        guard !outcome.rootIdentityInvalidated else {
+            transitionToNeedsAuthorization()
+            return
+        }
+        let report = outcome.report
         guard !report.wasCancelled else {
             state = .needsRefresh(folderCount: authorizedRoots.count)
             return
         }
 
         let snapshot = LocalIndexSnapshot(
-            formatVersion: report.snapshot.formatVersion,
+            formatVersion: LocalIndexSnapshot.currentFormatVersion,
             generatedAt: report.snapshot.generatedAt,
             roots: authorizedRoots.map(\.path),
             entries: report.snapshot.entries,
             rootRevision: revision,
-            isComplete: !report.reachedLimit
+            isComplete: report.snapshot.isComplete
+                && !report.reachedLimit
                 && !report.reachedVisitLimit
                 && report.inaccessibleRootCount == 0
+                && report.accessErrorCount == 0
         )
         do {
             let currentAuthorization = try authorizedFolderStore.loadSet()
-            guard currentAuthorization.revision == revision,
+            guard currentAuthorization == authorization,
                   runID == generation else {
+                return
+            }
+            guard rootIdentityValidator(rootIdentities) else {
+                transitionToNeedsAuthorization()
                 return
             }
             try indexStore.save(snapshot)
             guard runID == generation else { return }
+            guard rootIdentityValidator(rootIdentities) else {
+                transitionToNeedsAuthorization()
+                return
+            }
             provider.replaceSnapshot(snapshot)
-            if report.reachedLimit
-                || report.reachedVisitLimit
-                || report.inaccessibleRootCount > 0 {
+            if !snapshot.isComplete {
                 state = .partial(
                     fileCount: snapshot.entries.count,
                     folderCount: authorizedRoots.count,
@@ -271,8 +344,7 @@ public actor LocalIndexService {
                 )
             }
         } catch is AuthorizedFolderStoreError {
-            provider.clear()
-            state = .needsAuthorization
+            transitionToNeedsAuthorization()
         } catch {
             provider.clear()
             state = .failed
@@ -303,5 +375,16 @@ public actor LocalIndexService {
         generation &+= 1
         runningTask?.cancel()
         runningTask = nil
+    }
+
+    private func transitionToNeedsAuthorization() {
+        invalidateRunningBuild()
+        provider.clear()
+        do {
+            try indexStore.clear()
+            state = .needsAuthorization
+        } catch {
+            state = .failed
+        }
     }
 }
