@@ -88,15 +88,16 @@ jobs:
         shell: zsh {0}
         run: |
           set -euo pipefail
-          if rg -n \
-            'NSApp\.(activate|deactivate)|NSWorkspace\.shared\.open|activateFileViewerSelecting|NSPasteboard|NSAppleScript|RegisterEventHotKey|addGlobalMonitorForEvents' \
-            app/Sources/MacList \
-            -g '!LocalIndexCoordinator.swift'; then
-            print -u2 'FAIL native primary flow contains app switching or clipboard behavior'
-            exit 1
-          fi
-          rg -Fq 'let panel = NSOpenPanel()' app/Sources/MacList/LocalIndexCoordinator.swift
-          rg -Fq 'NSApp.activate' app/Sources/MacList/LocalIndexCoordinator.swift
+          forbidden='NSApp\.(activate|deactivate)|NSWorkspace\.shared\.open|activateFileViewerSelecting|NSPasteboard|NSAppleScript|RegisterEventHotKey|addGlobalMonitorForEvents'
+          for source in app/Sources/MacList/*.swift; do
+            [[ "${source:t}" == "LocalIndexCoordinator.swift" ]] && continue
+            if /usr/bin/grep -nE "$forbidden" "$source"; then
+              print -u2 'FAIL native primary flow contains app switching or clipboard behavior'
+              exit 1
+            fi
+          done
+          /usr/bin/grep -Fq 'let panel = NSOpenPanel()' app/Sources/MacList/LocalIndexCoordinator.swift
+          /usr/bin/grep -Fq 'NSApp.activate' app/Sources/MacList/LocalIndexCoordinator.swift
           print 'PASS primary flow has no app switching; activation is limited to user-requested folder setup'
 
   media:
