@@ -29,7 +29,8 @@ final class SearchPanelController: NSWindowController,
     NSTableViewDataSource,
     NSTableViewDelegate {
 
-    private let provider: SpotlightProvider
+    private let spotlightProvider: SpotlightProvider
+    private let localIndexProvider: LocalIndexProvider
     private let dialogBridge: FileDialogBridge
     private let logger = Logger(
         subsystem: "com.xffighting.maclist",
@@ -50,7 +51,7 @@ final class SearchPanelController: NSWindowController,
     private var dialogSession: FileDialogSession?
     private var observedDialog: ObservedDialog?
     private var interactionState = DialogInteractionState()
-    private var baseRecords: [FileRecord] = []
+    private var searchResults = SearchResultSet()
     private var displayedRecords: [FileRecord] = []
     private var queryGeneration = UUID()
     private var queryCancellation: SpotlightQueryCancellation?
@@ -62,8 +63,13 @@ final class SearchPanelController: NSWindowController,
     private var isSubmitting = false
     private var selectionOperation: FileDialogSelectionOperation?
 
-    init(provider: SpotlightProvider, dialogBridge: FileDialogBridge) {
-        self.provider = provider
+    init(
+        provider: SpotlightProvider,
+        localIndexProvider: LocalIndexProvider = LocalIndexProvider(),
+        dialogBridge: FileDialogBridge
+    ) {
+        spotlightProvider = provider
+        self.localIndexProvider = localIndexProvider
         self.dialogBridge = dialogBridge
 
         let panel = AttachedSearchPanel(
@@ -93,7 +99,19 @@ final class SearchPanelController: NSWindowController,
     }
 
     func preloadRecentFiles() {
-        loadRecords(for: "", showLoadingState: false)
+        let generation = UUID()
+        queryGeneration = generation
+        loadLocalIndexRecords(for: "", generation: generation)
+        loadSpotlightRecords(for: "", showLoadingState: false, generation: generation)
+    }
+
+    func refreshLocalIndex() {
+        searchResults.clear(source: .localIndex)
+        applySearch()
+        loadLocalIndexRecords(
+            for: searchField.stringValue,
+            generation: queryGeneration
+        )
     }
 
     func attach(to session: FileDialogSession, dialog: ObservedDialog) {
@@ -397,21 +415,24 @@ final class SearchPanelController: NSWindowController,
 
         searchPhase = hasQuery ? .loading : .idle
         setExpanded(hasQuery)
+        queryGeneration = UUID()
+        queryCancellation?.cancel()
+        queryCancellation = nil
+        searchResults.clearAll()
         applySearch()
         if hasQuery {
-            scheduleSpotlightQuery()
-        } else {
-            queryGeneration = UUID()
-            queryCancellation?.cancel()
-            queryCancellation = nil
+            let generation = queryGeneration
+            loadLocalIndexRecords(for: query, generation: generation)
+            scheduleSpotlightQuery(generation: generation)
         }
     }
 
     private func applySearch() {
         let selectedPath = selectedRecord?.path
+        let allRecords = searchResults.allRecords
         displayedRecords = SearchEngine.search(
             searchField.stringValue,
-            in: baseRecords,
+            in: allRecords,
             limit: 12
         )
         tableView.reloadData()
@@ -426,22 +447,19 @@ final class SearchPanelController: NSWindowController,
             tableView.deselectAll(nil)
         }
         logger.notice(
-            "presentation base=\(self.baseRecords.count, privacy: .public) displayed=\(self.displayedRecords.count, privacy: .public) expanded=\(self.isExpanded, privacy: .public)"
+            "presentation base=\(allRecords.count, privacy: .public) displayed=\(self.displayedRecords.count, privacy: .public) expanded=\(self.isExpanded, privacy: .public)"
         )
         updateCandidatePresentation()
     }
 
-    private func scheduleSpotlightQuery() {
-        queryCancellation?.cancel()
+    private func scheduleSpotlightQuery(generation: UUID) {
         let cancellation = SpotlightQueryCancellation()
         queryCancellation = cancellation
-        let generation = UUID()
-        queryGeneration = generation
         let query = searchField.stringValue
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self, self.queryGeneration == generation else { return }
-            self.loadRecords(
+            self.loadSpotlightRecords(
                 for: query,
                 showLoadingState: true,
                 generation: generation,
@@ -450,7 +468,27 @@ final class SearchPanelController: NSWindowController,
         }
     }
 
-    private func loadRecords(
+    private func loadLocalIndexRecords(for query: String, generation: UUID) {
+        let provider = localIndexProvider
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let records: [FileRecord]
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                records = provider.recentFiles()
+            } else {
+                records = provider.matchingFiles(query)
+            }
+            DispatchQueue.main.async {
+                guard let self, self.queryGeneration == generation else { return }
+                self.logger.notice(
+                    "local query completed provider=\(records.count, privacy: .public)"
+                )
+                self.searchResults.replace(records, source: .localIndex)
+                self.applySearch()
+            }
+        }
+    }
+
+    private func loadSpotlightRecords(
         for query: String,
         showLoadingState: Bool,
         generation: UUID? = nil,
@@ -460,7 +498,7 @@ final class SearchPanelController: NSWindowController,
             searchPhase = .loading
             updateCandidatePresentation()
         }
-        let provider = self.provider
+        let provider = spotlightProvider
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result {
@@ -478,12 +516,12 @@ final class SearchPanelController: NSWindowController,
                 switch result {
                 case let .success(records):
                     self.logger.notice(
-                        "query completed provider=\(records.count, privacy: .public)"
+                        "spotlight query completed provider=\(records.count, privacy: .public)"
                     )
                     if generation != nil {
                         self.searchPhase = .ready
                     }
-                    self.merge(records)
+                    self.searchResults.replace(records, source: .spotlight)
                     self.applySearch()
                 case let .failure(error):
                     self.logger.error(
@@ -545,17 +583,6 @@ final class SearchPanelController: NSWindowController,
         tableView.frame = tableFrame
         fileColumn.width = width
         tableView.sizeLastColumnToFit()
-    }
-
-    private func merge(_ records: [FileRecord]) {
-        var byPath = Dictionary(uniqueKeysWithValues: baseRecords.map { ($0.path, $0) })
-        for record in records {
-            if let current = byPath[record.path], current.lastUsedAt >= record.lastUsedAt {
-                continue
-            }
-            byPath[record.path] = record
-        }
-        baseRecords = Array(byPath.values)
     }
 
     private func handleSearchKey(_ event: NSEvent) -> Bool {

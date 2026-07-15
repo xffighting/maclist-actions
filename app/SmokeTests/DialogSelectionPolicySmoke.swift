@@ -70,6 +70,7 @@ enum DialogSelectionPolicySmoke {
         try SpotlightProviderSmoke.run()
         DialogObservationSmoke.run()
         try LocalIndexSmoke.run()
+        SearchResultSetSmoke.run()
         print("dialog-selection-policy: ok")
     }
 }

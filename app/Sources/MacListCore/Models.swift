@@ -1,6 +1,6 @@
 import Foundation
 
-public enum FileRecordSource: String, Codable, Sendable {
+public enum FileRecordSource: String, Codable, Hashable, Sendable {
     case spotlight
     case history
     case localIndex
