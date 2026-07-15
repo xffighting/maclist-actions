@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>MacList · Native Preview Dashboard</title>
+  <title>MacList · 项目进展 Dashboard</title>
   <style>
     :root {
       --canvas: #f2f2f7;
@@ -90,8 +90,8 @@
     .search input:focus { border-color: rgba(0, 122, 255, .35); background: var(--surface); }
     .search kbd { position: absolute; right: 8px; top: 9px; border: 0; color: var(--tertiary); font: 11px/18px ui-monospace, "SFMono-Regular", monospace; }
     .title-actions { height: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-right: 14px; border-left: 1px solid var(--line); }
-    .status-pill { display: inline-flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 12px; }
-    .status-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px rgba(255, 159, 10, .12); }
+    .status-pill { max-width: 226px; display: inline-flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 11px; line-height: 1.25; }
+    .status-pill::before { content: ""; width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px rgba(255, 159, 10, .12); }
     .icon-button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; cursor: pointer; transition: background var(--transition); }
     .icon-button:hover { background: rgba(118, 118, 128, .12); }
     .icon-button svg { width: 17px; height: 17px; }
@@ -107,19 +107,20 @@
     .nav-item[aria-current="page"] .nav-icon { color: var(--blue); }
     .nav-icon svg { width: 16px; height: 16px; }
     .nav-count { margin-left: auto; color: var(--tertiary); font-size: 12px; }
-    .progress-card { margin: 10px 6px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, .68); }
-    .progress-head { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--secondary); font-size: 12px; }
-    .progress-track { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(118, 118, 128, .16); }
-    .progress-track span { display: block; width: 72%; height: 100%; border-radius: inherit; background: var(--blue); }
+    .index-card { width: calc(100% - 12px); margin: 10px 6px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, .72); cursor: pointer; text-align: left; }
+    .index-card:hover { border-color: var(--line-strong); background: var(--surface); }
+    .index-card strong { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .index-card strong::before { content: ""; width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--tertiary); box-shadow: 0 0 0 3px rgba(118, 118, 128, .1); }
+    .index-card span { display: block; margin-top: 6px; color: var(--secondary); font-size: 11px; line-height: 1.45; }
     .sidebar-footer { margin: 20px 10px 0; color: var(--tertiary); font-size: 11px; }
 
     .main { min-width: 0; min-height: 0; overflow-y: auto; background: #ffffff; }
     .page { display: none; padding: 36px clamp(26px, 4vw, 54px) 60px; animation: fade-in var(--transition); }
     .page.active { display: block; }
     @keyframes fade-in { from { opacity: .92; transform: translateY(1px); } to { opacity: 1; transform: none; } }
-    .page-heading { margin-bottom: 28px; }
+    .page-heading { margin-bottom: 24px; }
     .page-heading .overline { margin-bottom: 8px; color: var(--blue); font-size: 12px; font-weight: 650; }
-    .page-heading h1 { max-width: 820px; margin: 0; font-size: clamp(34px, 4vw, 54px); line-height: 1.06; letter-spacing: -.038em; font-weight: 700; }
+    .page-heading h1 { max-width: 880px; margin: 0; font-size: clamp(32px, 3.5vw, 46px); line-height: 1.08; letter-spacing: -.034em; font-weight: 700; }
     .page-heading p { max-width: 720px; margin: 14px 0 0; color: var(--secondary); font-size: 17px; line-height: 1.55; }
 
     .summary-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .03); }
@@ -131,10 +132,37 @@
     .secondary-action { min-height: 40px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--text); cursor: pointer; }
     .secondary-action:hover { background: var(--surface-muted); }
 
+    .flow-grid { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.35fr); gap: 12px; margin: 14px 0 26px; }
+    .flow-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); text-align: left; cursor: pointer; }
+    .flow-card:hover { border-color: var(--line-strong); box-shadow: 0 5px 14px rgba(0, 0, 0, .04); }
+    .flow-card-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .flow-card-label strong { font-size: 15px; }
+    .flow-card-label span { color: var(--tertiary); font-size: 11px; }
+    .flow-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .flow-steps li { display: inline-flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 12px; }
+    .flow-steps li:not(:last-child)::after { content: "›"; color: var(--tertiary); font-size: 15px; }
+    .flow-step { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); color: var(--text); white-space: nowrap; }
+
+    .status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .status-card { min-height: 82px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); cursor: pointer; text-align: left; }
+    .status-card:hover { border-color: var(--line-strong); background: var(--surface-muted); }
+    .status-card strong { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .status-card strong::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tertiary); }
+    .status-card[data-tone="active"] strong::before { background: var(--amber); }
+    .status-card[data-tone="ready"] strong::before { background: var(--green); }
+    .status-card[data-tone="watch"] strong::before { background: var(--red); }
+    .status-card code { margin-left: auto; color: var(--tertiary); font: 10px/1.2 ui-monospace, "SFMono-Regular", monospace; font-weight: 500; }
+    .status-card span { display: block; margin-top: 6px; color: var(--secondary); font-size: 11px; line-height: 1.4; }
+    .index-operation { width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 11px 13px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--surface-muted); color: var(--secondary); cursor: pointer; text-align: left; }
+    .index-operation:hover { background: var(--surface); border-style: solid; }
+    .index-operation strong { color: var(--text); font-size: 12px; }
+    .index-operation span { font-size: 11px; line-height: 1.4; }
+
     .metrics { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin: 18px 0 28px; }
     .metric { min-height: 112px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); cursor: pointer; text-align: left; transition: transform var(--transition), box-shadow var(--transition); }
     .metric:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0, 0, 0, .06); }
     .metric b { display: block; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .metric b.word { font-size: 22px; letter-spacing: -.02em; }
     .metric span { display: block; margin-top: 12px; color: var(--secondary); font-size: 12px; }
     .metric small { display: block; margin-top: 3px; color: var(--tertiary); font-size: 11px; }
 
@@ -236,6 +264,7 @@
       :root { --detail-width: 270px; --sidebar-width: 206px; }
       .metrics { grid-template-columns: repeat(2, 1fr); }
       .knowledge-grid { grid-template-columns: 1fr; }
+      .flow-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 860px) {
       .desktop { padding: 0; }
@@ -245,7 +274,7 @@
       .search { width: 46%; }
       .workspace { grid-template-columns: 74px minmax(0, 1fr); }
       .sidebar { padding-inline: 8px; }
-      .sidebar-label, .nav-item span:not(.nav-icon), .nav-count, .progress-card, .sidebar-footer { display: none; }
+      .sidebar-label, .nav-item span:not(.nav-icon), .nav-count, .index-card, .sidebar-footer { display: none; }
       .nav-item { justify-content: center; padding: 7px; }
       .detail { position: fixed; z-index: 20; top: 54px; right: 0; bottom: 0; width: min(330px, calc(100vw - 74px)); transform: translateX(102%); box-shadow: -14px 0 30px rgba(0, 0, 0, .12); transition: transform var(--transition); }
       .detail.open { transform: translateX(0); }
@@ -259,6 +288,7 @@
       .workspace { grid-template-columns: 58px minmax(0, 1fr); }
       .page { padding: 26px 18px 48px; }
       .metrics { grid-template-columns: 1fr 1fr; }
+      .status-grid { grid-template-columns: 1fr 1fr; }
       .metric { min-height: 98px; padding: 14px; }
       .metric b { font-size: 26px; }
       .task-card { grid-template-columns: 5px minmax(0, 1fr); }
@@ -266,6 +296,7 @@
       .detail { width: calc(100vw - 58px); }
       .search kbd { display: none; }
     }
+    @media (max-width: 390px) { .status-grid { grid-template-columns: 1fr; } }
     @media (pointer: coarse) {
       .search input, .icon-button, .nav-item, .primary-action, .secondary-action, .filter, .settings-option { min-height: 44px; }
       .icon-button { width: 44px; height: 44px; }
@@ -277,20 +308,20 @@
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <div class="desktop">
-    <section class="window" aria-label="MacList native preview project dashboard">
+    <section class="window" aria-label="MacList 项目进展 dashboard">
       <header class="titlebar">
         <div class="traffic" aria-hidden="true"><span class="close"></span><span class="minimize"></span><span class="zoom"></span></div>
         <div class="project-title">
-          <div class="project-name"><strong>MacList</strong><span>Native Preview · 2026-07-14</span></div>
+          <div class="project-name"><strong>MacList</strong><span>Local-first Preview · 2026-07-15</span></div>
           <label class="search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
-            <input id="global-search" type="search" placeholder="搜索任务、知识和决策" autocomplete="off" aria-label="快速搜索 Dashboard" aria-describedby="search-status">
+            <input id="global-search" type="search" placeholder="搜索流程、状态、隐私和边界" autocomplete="off" aria-label="快速搜索 Dashboard" aria-describedby="search-status">
             <kbd aria-hidden="true">⌘K</kbd>
           </label>
           <span class="sr-only" id="search-status" role="status" aria-live="polite"></span>
         </div>
         <div class="title-actions">
-          <span class="status-pill">静默验证通过 · 待实测</span>
+          <span class="status-pill">本机静默门禁已通过；GitHub CI 以 Actions 为准</span>
           <button class="icon-button" id="settings-button" type="button" aria-label="显示设置" aria-expanded="false" aria-controls="settings-popover">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.19.36.4.76.4 1.1V10h1v4h-.09a1.7 1.7 0 0 0-1.31 1Z"></path></svg>
           </button>
@@ -302,100 +333,123 @@
           <div class="sidebar-section">
             <p class="sidebar-label">项目</p>
             <button class="nav-item" type="button" data-page="executive" aria-current="page"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"></rect><rect x="14" y="3" width="7" height="7" rx="2"></rect><rect x="3" y="14" width="7" height="7" rx="2"></rect><rect x="14" y="14" width="7" height="7" rx="2"></rect></svg></span><span>总览</span></button>
-            <button class="nav-item" type="button" data-page="tasks"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"></path><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"></path></svg></span><span>任务流</span><span class="nav-count">7</span></button>
+            <button class="nav-item" type="button" data-page="tasks"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"></path><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"></path></svg></span><span>任务流</span><span class="nav-count">9</span></button>
             <button class="nav-item" type="button" data-page="timeline"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span><span>时间线</span></button>
           </div>
           <div class="sidebar-section">
             <p class="sidebar-label">资产</p>
-            <button class="nav-item" type="button" data-page="knowledge"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg></span><span>知识资产</span><span class="nav-count">4</span></button>
+            <button class="nav-item" type="button" data-page="knowledge"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg></span><span>知识资产</span><span class="nav-count">5</span></button>
             <button class="nav-item" type="button" data-page="decisions"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"></path><circle cx="12" cy="12" r="9"></circle></svg></span><span>决策记录</span><span class="nav-count">4</span></button>
           </div>
           <div class="sidebar-section">
-            <p class="sidebar-label">发布进度</p>
-            <div class="progress-card"><div class="progress-head"><span>Native Preview</span><b>75%</b></div><div class="progress-track"><span style="width:75%"></span></div></div>
+            <p class="sidebar-label">本地索引</p>
+            <button class="index-card" type="button" data-show-detail="index-states"><strong>默认：未设置</strong><span>只有用户主动选择资料目录后，才建立本地元数据索引。</span></button>
           </div>
-          <div class="sidebar-footer">本地优先 · 最终打开人工确认<br>最后更新：2026-07-14</div>
+          <div class="sidebar-footer">本地优先 · 默认选中并确认<br>最后更新：2026-07-15</div>
         </aside>
 
         <main class="main" id="main-content" tabindex="-1">
           <div class="global-empty" id="global-empty" role="status" hidden><strong>没有找到匹配内容</strong><span>换一个关键词，或按 Esc 清除搜索。</span></div>
           <section class="page active" id="page-executive" data-page-panel="executive">
-            <header class="page-heading"><div class="overline">EXECUTIVE VIEW</div><h1>上传窗口一出现，搜索就在那里。</h1><p>MacList 已从快捷键启动器重构为原文件面板里的安静搜索层。静默门禁已经通过；微信、邮件可见回归仍明确暂停。</p></header>
-            <article class="summary-card searchable" data-search="结论 自动 唤起 文件 上传 搜索 原窗口">
+            <header class="page-heading"><div class="overline">EXECUTIVE VIEW · 2026-07-15</div><h1>记得客户名或项目名，就能在上传窗口找回文件。</h1><p>模式 2 的代码与本机静默门禁已完成：回车后只确认原 Open-file 面板，让附件进入待发送区；永不自动发送。真实系统面板和微信、邮件仍待可视化回归，远端状态以 GitHub Actions 为准。</p></header>
+            <article class="summary-card searchable" data-search="结论 客户 项目 模糊 匹配 上传 文件 原窗口 本地">
               <strong>一句话结论</strong>
-              <p>架构已能区分微信/邮件宿主、独立文件面板和实际键盘目标；预览版主路径没有最终 Open、Save 或 Send 调用，真实窗口误触风险待回归。</p>
-              <button class="primary-action" type="button" data-show-detail="architecture">查看当前架构</button>
+              <p>MacList 的产品主线已经收敛：用户先授权资料目录，之后在微信或邮件的系统上传窗口里，直接按客户名、项目名或模糊文件名查到候选文件。</p>
+              <button class="primary-action" type="button" data-show-detail="flow">查看完整使用流程</button>
             </article>
-            <div class="metrics" aria-label="关键数字">
-              <button class="metric searchable" type="button" data-search="3 PID 宿主 面板 键盘" data-show-detail="architecture"><b>3</b><span>独立身份</span><small>宿主 · 面板 · 键盘目标</small></button>
-              <button class="metric searchable" type="button" data-search="0 切换 Finder 剪贴板" data-show-detail="safety"><b>0</b><span>应用切换调用</span><small>无 Finder、激活、停用、剪贴板</small></button>
-              <button class="metric searchable" type="button" data-search="3 静默 smoke release static" data-show-detail="headless"><b>3</b><span>静默门禁层</span><small>逻辑 · 构建 · 静态扫描</small></button>
-              <button class="metric searchable" type="button" data-search="4 待实测 harness 微信 mail outlook" data-show-detail="live"><b>4</b><span>待可见回归</span><small>Harness · 微信 · Mail · Outlook</small></button>
+            <div class="flow-grid" aria-label="首次与日常使用流程">
+              <button class="flow-card searchable" type="button" data-search="首次 选择 资料目录 本地 元数据 索引 授权" data-show-detail="first-run"><span class="flow-card-label"><strong>首次使用</strong><span>只做一次</span></span><ol class="flow-steps"><li><span class="flow-step">选择资料目录</span></li><li><span class="flow-step">建立本地元数据索引</span></li></ol></button>
+              <button class="flow-card searchable" type="button" data-search="日常 上传 系统窗口 MacList 客户 项目 候选 回车 自动 确认 附件 待发送" data-show-detail="flow"><span class="flow-card-label"><strong>日常发送文件</strong><span>留在当前应用</span></span><ol class="flow-steps"><li><span class="flow-step">上传</span></li><li><span class="flow-step">系统窗口</span></li><li><span class="flow-step">输入客户/项目</span></li><li><span class="flow-step">候选</span></li><li><span class="flow-step">自动确认</span></li><li><span class="flow-step">附件待发送</span></li></ol></button>
             </div>
-            <div class="section-title"><h2>下一步</h2><span>按风险排序</span></div>
+
+            <div class="metrics" aria-label="当前关键状态">
+              <button class="metric searchable" type="button" data-search="本地 静默 验证 通过" data-show-detail="headless"><b class="word">已通过</b><span>本地静默验证</span><small>临时沙盒，不扫描真实资料</small></button>
+              <button class="metric searchable" type="button" data-search="GitHub CI Actions 实时状态" data-show-detail="ci"><b class="word">实时状态</b><span>GitHub CI</span><small>以 Actions 实际结果为准</small></button>
+              <button class="metric searchable" type="button" data-search="隐私 3 字段 文件名 路径 修改时间" data-show-detail="privacy"><b>3</b><span>本地元数据字段</span><small>文件名 · 路径 · 修改时间</small></button>
+              <button class="metric searchable" type="button" data-search="自动 确认 模式2 已完成 Open 静默门禁" data-show-detail="confirm-choice"><b class="word">模式 2</b><span>默认自动确认</span><small>代码完成 · 本机门禁通过</small></button>
+            </div>
+
+            <div class="section-title"><h2>索引状态</h2><span>7 个真实状态；清空是操作</span></div>
+            <div class="status-grid" aria-label="本地索引状态说明">
+              <button class="status-card searchable" type="button" data-tone="idle" data-search="索引 disabled 未设置 默认 不扫描" data-show-detail="index-states"><strong>未设置 <code>disabled</code></strong><span>默认状态，不扫描任何资料目录。</span></button>
+              <button class="status-card searchable" type="button" data-tone="active" data-search="索引 indexing 建立中 选择目录" data-show-detail="index-states"><strong>建立中 <code>indexing</code></strong><span>用户选定目录后，在本机读取元数据。</span></button>
+              <button class="status-card searchable" type="button" data-tone="ready" data-search="索引 ready 已就绪 搜索" data-show-detail="index-states"><strong>已就绪 <code>ready</code></strong><span>可按客户、项目、文件名和路径搜索。</span></button>
+              <button class="status-card searchable" type="button" data-tone="active" data-search="索引 partial 部分完成 限额 时间 访问 枚举" data-show-detail="index-states"><strong>部分完成 <code>partial</code></strong><span>达到保护线或遇到访问错误，安全取得的部分仍可用。</span></button>
+              <button class="status-card searchable" type="button" data-tone="active" data-search="索引 needsRefresh 需要更新 重建" data-show-detail="index-states"><strong>需要更新 <code>needsRefresh</code></strong><span>授权仍有效，但索引需要重新建立。</span></button>
+              <button class="status-card searchable" type="button" data-tone="watch" data-search="索引 needsAuthorization 需重选 权限 书签 失效" data-show-detail="index-states"><strong>需重选 <code>needsAuthorization</code></strong><span>目录授权失效时，明确提示重新选择。</span></button>
+              <button class="status-card searchable" type="button" data-tone="watch" data-search="索引 failed 失败 操作失败 恢复" data-show-detail="index-states"><strong>失败 <code>failed</code></strong><span>操作失败后保持收敛，可重选目录或清空。</span></button>
+            </div>
+            <button class="index-operation searchable" type="button" data-search="索引 可清空 操作 删除 元数据 授权 原文件" data-show-detail="index-states"><strong>可用操作：清空本地索引…</strong><span>在已配置或异常状态下删除索引与目录授权，不触碰任何原文件。</span></button>
+
+            <div class="section-title"><h2>边界与下一门禁</h2><span>只写已经证明的事实</span></div>
             <div class="list">
-              <button class="row searchable" type="button" data-search="XCTest GitHub Actions CI" data-show-detail="ci"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 12 2 2 4-4"></path><circle cx="12" cy="12" r="9"></circle></svg></span><span class="row-copy"><strong>GitHub Actions 完整门禁已通过</strong><span>Native XCTest、Standalone、旧动作、隐私与媒体五组检查全绿</span></span><span class="row-state"><span class="state-dot done"></span>已通过<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
-              <button class="row searchable" type="button" data-search="微信 邮件 可见 回归" data-show-detail="live"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg></span><span class="row-copy"><strong>等待许可后验证真实上传窗口</strong><span>不启动应用、不抢焦点；获准后按 Harness → 微信 → Mail → Outlook</span></span><span class="row-state"><span class="state-dot watch"></span>已暂停<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
-              <button class="row searchable" type="button" data-search="release tag notarization" data-show-detail="release"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg></span><span class="row-copy"><strong>不要提前发布原生正式版</strong><span>真实回归、签名与公证没有完成前，不创建 tag 或 Release</span></span><span class="row-state"><span class="state-dot watch"></span>发布门禁<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
+              <button class="row searchable" type="button" data-search="已实现 本地 索引 模糊 路径 客户 项目 Spotlight 合并 去重" data-show-detail="implemented"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 12 2 2 4-4"></path><circle cx="12" cy="12" r="9"></circle></svg></span><span class="row-copy"><strong>已实现：本地索引核心与双来源候选</strong><span>文件名/路径模糊匹配；本地索引优先，与 Spotlight 结果合并去重</span></span><span class="row-state"><span class="state-dot done"></span>本地通过<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
+              <button class="row searchable" type="button" data-search="未验证 微信 邮件 Outlook 真实 上传 窗口" data-show-detail="live"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg></span><span class="row-copy"><strong>未验证：微信与邮件真实上传窗口</strong><span>按照要求不做可见测试；当前不能承诺微信、Mail、Outlook 已兼容</span></span><span class="row-state"><span class="state-dot watch"></span>等待实测<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
+              <button class="row searchable" type="button" data-search="自动 确认 模式2 回车 Open 不发送 安全 拒绝 回退" data-show-detail="confirm-choice"><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg></span><span class="row-copy"><strong>已完成：默认自动确认原 Open-file 面板</strong><span>Save、选文件夹、未知、多选、旧会话或歧义按钮一律回退人工；永不发送</span></span><span class="row-state"><span class="state-dot done"></span>本机通过<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"></path></svg></span></button>
             </div>
           </section>
 
           <section class="page" id="page-tasks" data-page-panel="tasks">
-            <header class="page-heading"><div class="overline">OPERATION VIEW</div><h1>任务流</h1><p>每个角色只保留一个清晰责任。筛选状态，点击任务，在右侧查看验收证据。</p></header>
+            <header class="page-heading"><div class="overline">OPERATION VIEW</div><h1>任务流</h1><p>按“已完成、进行中、需复验”筛选。点击任一任务，在右侧查看当前证据和下一门禁。</p></header>
             <div class="task-toolbar" role="group" aria-label="按任务状态筛选"><button class="filter active" type="button" data-task-filter="all" aria-pressed="true">全部</button><button class="filter" type="button" data-task-filter="done" aria-pressed="false">已完成</button><button class="filter" type="button" data-task-filter="active" aria-pressed="false">进行中</button><button class="filter" type="button" data-task-filter="watch" aria-pressed="false">需复验</button></div>
             <div id="task-list">
-              <button class="task-card searchable" type="button" data-state="done" data-search="产品流程 自动 上传 文件" data-show-detail="flow"><span class="task-accent"></span><span class="task-main"><strong>产品 · 冻结唯一正确流程</strong><p>点击上传后自动贴附；不再要求快捷键，不出现独立启动页。</p></span><span class="task-meta">完成<br>Flow spec</span></button>
-              <button class="task-card searchable" type="button" data-state="done" data-search="PID discovery panel service" data-show-detail="architecture"><span class="task-accent"></span><span class="task-main"><strong>架构 · 重做文件面板发现</strong><p>系统焦点、可见窗口兜底、宿主与真实 Panel Service 分离。</p></span><span class="task-meta">完成<br>3 identities</span></button>
-              <button class="task-card searchable" type="button" data-state="done" data-search="UI nonactivating space layout generation" data-show-detail="ui"><span class="task-accent"></span><span class="task-main"><strong>界面 · 贴附而不切应用</strong><p>非激活面板、代次回调、多屏与窄窗口约束、无跨 Space 常驻。</p></span><span class="task-meta">完成<br>Headless</span></button>
-              <button class="task-card searchable" type="button" data-state="done" data-search="bridge select only identity cancel" data-show-detail="bridge"><span class="task-accent"></span><span class="task-main"><strong>桥接 · 默认只精确选中</strong><p>可取消事务、物理文件身份回读，不自动按最终“打开”。</p></span><span class="task-meta">完成<br>Fail-safe</span></button>
-              <button class="task-card searchable" type="button" data-state="done" data-search="smoke release static verify" data-show-detail="headless"><span class="task-accent"></span><span class="task-main"><strong>QA · 静默门禁</strong><p>Smoke、release 构建、plist、签名、doctor 与禁用流程扫描通过。</p></span><span class="task-meta">完成<br>No GUI</span></button>
-              <button class="task-card searchable" type="button" data-state="done" data-search="GitHub Actions XCTest CI" data-show-detail="ci"><span class="task-accent"></span><span class="task-main"><strong>CI · 完整门禁</strong><p>GitHub Xcode runner 已通过 Native XCTest 和其余四组仓库检查。</p></span><span class="task-meta">完成<br>5 jobs</span></button>
-              <button class="task-card searchable" type="button" data-state="watch" data-search="Harness 微信 Mail Outlook 真实" data-show-detail="live"><span class="task-accent"></span><span class="task-main"><strong>兼容性 · 真实窗口回归</strong><p>按照用户要求暂停，未获许可前不启动任何可见测试。</p></span><span class="task-meta">暂停<br>User gate</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="产品 首次 日常 客户 项目 流程" data-show-detail="flow"><span class="task-accent"></span><span class="task-main"><strong>产品 · 固定首次与日常流程</strong><p>首次选资料目录；日常在原上传窗口按客户/项目搜索，不再使用独立启动页。</p></span><span class="task-meta">完成<br>Product flow</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="本地 索引 路径 模糊 客户 项目" data-show-detail="implemented"><span class="task-accent"></span><span class="task-main"><strong>搜索 · 本地元数据索引核心</strong><p>仅处理文件名、路径、修改时间，并支持客户名与项目路径的模糊匹配。</p></span><span class="task-meta">完成<br>Core + smoke</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="Spotlight 双来源 合并 去重 本地优先" data-show-detail="implemented"><span class="task-accent"></span><span class="task-main"><strong>搜索 · 合并本地索引与 Spotlight</strong><p>两路结果独立更新；相同路径由本地索引优先，避免重复候选。</p></span><span class="task-meta">完成<br>Result set</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="文件夹 菜单 选择 更新 清空 书签 授权 索引 状态" data-show-detail="index-states"><span class="task-accent"></span><span class="task-main"><strong>应用 · 接入选择、更新与清空入口</strong><p>菜单已连接目录选择、立即更新与确认清空；默认不扫描，清空不删除原文件。</p></span><span class="task-meta">完成<br>App wiring</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="安全 索引 完整性 加固 授权 身份 缓存 并发" data-show-detail="index-hardening"><span class="task-accent"></span><span class="task-main"><strong>安全 · 索引完整性加固复核</strong><p>旧格式缓存、访问错误、目录身份变化和提交前后核验已补齐，并通过静默回归。</p></span><span class="task-meta">完成<br>Hardening gate</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="上传 系统 文件 面板 PID 贴附 不切换" data-show-detail="architecture"><span class="task-accent"></span><span class="task-main"><strong>窗口 · 识别并贴附系统文件面板</strong><p>宿主、文件面板 owner 与键盘目标分离；界面不主动切换应用。</p></span><span class="task-meta">完成<br>Native core</span></button>
+              <button class="task-card searchable" type="button" data-state="done" data-search="回车 选中 自动 确认 selectAndConfirm selectOnly 安全 回退" data-show-detail="confirm-choice"><span class="task-accent"></span><span class="task-main"><strong>桥接 · 模式 2 与失败关闭</strong><p>一次性会话凭证、权威默认按钮、精确单选和拒绝矩阵已完成；菜单可切换只选中。</p></span><span class="task-meta">完成<br>Bridge gate</span></button>
+              <button class="task-card searchable" type="button" data-state="active" data-search="GitHub Actions CI 推送 README Dashboard" data-show-detail="ci"><span class="task-accent"></span><span class="task-main"><strong>交付 · GitHub CI 持续门禁</strong><p>本地代码静默验证通过；每次远端提交都以 Actions 实际结果为准。</p></span><span class="task-meta">持续门禁<br>CI gate</span></button>
+              <button class="task-card searchable" type="button" data-state="watch" data-search="Harness 微信 Mail Outlook 真实 上传 窗口" data-show-detail="live"><span class="task-accent"></span><span class="task-main"><strong>兼容性 · 真实上传窗口回归</strong><p>按照用户要求暂停可见测试，微信、Mail、Outlook 仍属于未验证边界。</p></span><span class="task-meta">需复验<br>User gate</span></button>
             </div>
             <div class="empty" id="task-empty" role="status" aria-live="polite">没有符合当前筛选的任务。</div>
           </section>
 
           <section class="page" id="page-timeline" data-page-panel="timeline">
-            <header class="page-heading"><div class="overline">PROJECT LIFECYCLE</div><h1>从 Idea 到 Automation</h1><p>每一阶段记录目标、输入、输出和经验。点击节点查看交付证据。</p></header>
+            <header class="page-heading"><div class="overline">PROJECT LIFECYCLE</div><h1>从方向纠正到本地索引</h1><p>时间线保留每次关键转向与实际证据，避免把“代码存在”误写成“真实应用已兼容”。</p></header>
             <div class="timeline">
               <article class="timeline-item searchable" role="button" tabindex="0" data-search="Idea history Listary" data-show-detail="flow"><time>01 · PRODUCT RESET</time><h3>不是 history，是上传窗口里的 Listary</h3><p>把产品时刻锁定为“已经在微信或邮件，正在选择附件”。</p></article>
               <article class="timeline-item searchable" role="button" tabindex="0" data-search="wrong test shortcut launcher" data-show-detail="wrong-path"><time>02 · INVALIDATION</time><h3>作废快捷键和独立页面测试</h3><p>旧测试没有覆盖微信点击上传，因此不能作为成功证据。</p></article>
               <article class="timeline-item searchable" role="button" tabindex="0" data-search="Architecture host dialog PID" data-show-detail="architecture"><time>03 · ARCHITECTURE</time><h3>拆开宿主与独立文件面板</h3><p>以系统焦点发现真实 AX owner，并为该 PID 独立观察。</p></article>
-              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Safety generation select only" data-show-detail="bridge"><time>04 · SAFETY</time><h3>会话代次与只选中策略</h3><p>旧回调失效，最终“打开”暂时保留给用户。</p></article>
-              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Headless smoke release static" data-show-detail="headless"><time>05 · HEADLESS QA</time><h3>静默构建门禁通过</h3><p>没有启动图形界面、微信、邮件或 Harness。</p></article>
-              <article class="timeline-item active searchable" role="button" tabindex="0" data-search="Documentation Dashboard README" data-show-detail="docs"><time>06 · DOCUMENTATION</time><h3>同步真实状态</h3><p>README、规格、验收、Changelog 与 Dashboard 不再沿用旧结论。</p></article>
-              <article class="timeline-item pending searchable" role="button" tabindex="0" data-search="Live regression WeChat Mail" data-show-detail="live"><time>07 · LIVE REGRESSION</time><h3>等待用户许可</h3><p>下一阶段才运行 Harness、微信、Apple Mail 与 Outlook。</p></article>
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Safety generation select and confirm mode 2 fallback" data-show-detail="bridge"><time>04 · SAFETY</time><h3>模式 2 与失败关闭策略</h3><p>默认确认原 Open-file 面板；证据不足或菜单关闭时回退只选中。</p></article>
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="Local index metadata filename path modified" data-show-detail="implemented"><time>05 · LOCAL INDEX CORE</time><h3>本地元数据索引与路径模糊匹配</h3><p>以客户/项目所在路径参与搜索，本地结果与 Spotlight 合并去重。</p></article>
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="folder choose bookmark update clear app integration" data-show-detail="index-states"><time>06 · APP INTEGRATION</time><h3>目录授权与索引菜单已经接入</h3><p>选择、更新、清空入口已完成；生命周期按 7 个真实状态呈现，清空属于操作能力。</p></article>
+              <article class="timeline-item searchable" role="button" tabindex="0" data-search="index integrity hardening authorization identity cache concurrent callback" data-show-detail="index-hardening"><time>07 · HARDENING COMPLETE</time><h3>索引完整性边界已收口</h3><p>旧缓存升级、访问错误、目录替换和并发提交均已进入静默门禁。</p></article>
+              <article class="timeline-item active searchable" role="button" tabindex="0" data-search="GitHub CI push Actions" data-show-detail="ci"><time>08 · CI PER PUSH</time><h3>每次推送都核对 GitHub CI</h3><p>本地证据与远端门禁分开记录；远端结论始终以实际工作流为准。</p></article>
+              <article class="timeline-item pending searchable" role="button" tabindex="0" data-search="Live regression WeChat Mail Outlook" data-show-detail="live"><time>09 · LIVE REGRESSION</time><h3>真实微信与邮件窗口仍待验证</h3><p>继续静默工作；只有用户明确允许时才运行可见回归。</p></article>
             </div>
           </section>
 
           <section class="page" id="page-knowledge" data-page-panel="knowledge">
             <header class="page-heading"><div class="overline">KNOWLEDGE VIEW</div><h1>知识资产</h1><p>能让下一次更快、更安全的内容才算资产。点击卡片查看使用方式。</p></header>
             <div class="knowledge-grid">
-              <button class="knowledge-card searchable" type="button" data-search="Flow specification upload picker" data-show-detail="flow"><span class="kicker">Product Contract</span><h3>文件上传窗口流程规格</h3><p>定义自动出现、贴附搜索、精确选中，以及不含主动切应用调用的边界。</p><span class="asset-count">1 个稳定产品合同</span></button>
-              <button class="knowledge-card searchable" type="button" data-search="Architecture PID AX observer generation" data-show-detail="architecture"><span class="kicker">Architecture</span><h3>三身份会话模型</h3><p>宿主、文件面板 owner 与运行时键盘目标分开，代次隔离旧任务。</p><span class="asset-count">4 个核心状态维度</span></button>
-              <button class="knowledge-card searchable" type="button" data-search="Acceptance headless evidence" data-show-detail="headless"><span class="kicker">Acceptance</span><h3>静默验收记录</h3><p>明确记录通过项、没有运行的可见测试和下一道门禁。</p><span class="asset-count">3 层无界面证据</span></button>
-              <button class="knowledge-card searchable" type="button" data-search="Open source research Listary Cling Peekaboo LeaderKey" data-show-detail="research"><span class="kicker">Research</span><h3>开源与官方依据</h3><p>Listary 产品时刻、Apple 系统边界及 MIT/GPL 参考项目边界。</p><span class="asset-count">4 个重点参考项目</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Flow specification first run daily upload picker client project auto confirm waiting send" data-show-detail="flow"><span class="kicker">Product Contract</span><h3>首次授权与日常上传流程</h3><p>首次选择资料目录；日常按客户或项目找到候选，默认确认原面板，让附件进入待发送区。</p><span class="asset-count">1 条主流程，两种使用时刻</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Privacy fields filename path modified local no content" data-show-detail="privacy"><span class="kicker">Privacy</span><h3>本地索引隐私字段</h3><p>仅保存文件名、完整路径和修改时间；不读取文件内容，不上传索引。</p><span class="asset-count">3 个允许字段</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Index state disabled indexing ready partial needsRefresh needsAuthorization failed clear" data-show-detail="index-states"><span class="kicker">State Model</span><h3>索引生命周期</h3><p>7 个代码状态逐一对应用户语言；“清空”单列为操作能力，不再混入状态。</p><span class="asset-count">7 个状态，1 组恢复操作</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Architecture PID AX observer generation panel" data-show-detail="architecture"><span class="kicker">Architecture</span><h3>三身份会话模型</h3><p>宿主、系统文件面板 owner 与运行时键盘目标分开，避免把焦点发错应用。</p><span class="asset-count">原窗口贴附底座</span></button>
+              <button class="knowledge-card searchable" type="button" data-search="Acceptance headless local evidence no visible test" data-show-detail="headless"><span class="kicker">Acceptance</span><h3>静默验收边界</h3><p>记录本地通过项、未运行的真实应用测试，以及 GitHub CI 的独立远端门禁。</p><span class="asset-count">证据与承诺分开</span></button>
             </div>
           </section>
 
           <section class="page" id="page-decisions" data-page-panel="decisions">
             <header class="page-heading"><div class="overline">DECISION VIEW</div><h1>决策记录</h1><p>保留为什么这样做，避免未来团队重复争论已经验证过的问题。</p></header>
             <article class="decision recommended searchable" role="button" tabindex="0" data-search="native app skill decision" data-show-detail="native"><div class="decision-head"><h3>核心必须是原生 Mac App，Skill 只做安装与诊断</h3><span class="decision-badge">已采用</span></div><p>持续监听、非激活面板和原窗口回填都需要 Swift/AppKit 进程。</p><div class="decision-facts"><span>核心形态：Native</span><span>Skill：辅助</span><span>运行时：本地</span></div></article>
-            <article class="decision searchable" role="button" tabindex="0" data-search="host dialog PID separate" data-show-detail="architecture"><div class="decision-head"><h3>永远不再假设“前台应用 PID = 文件面板 PID”</h3></div><p>Open Panel 可以由独立服务绘制，发现、观察和桥接必须以真实 owner 为准。</p><div class="decision-facts"><span>误漏检风险：下降</span><span>Observer：按 PID</span><span>旧任务：generation</span></div></article>
-            <article class="decision searchable" role="button" tabindex="0" data-search="select only safety open confirm" data-show-detail="bridge"><div class="decision-head"><h3>预览版回车只选中，不自动点最终“打开”</h3></div><p>先证明每个真实应用都能精确回读，再考虑自动确认。</p><div class="decision-facts"><span>误触风险：待回归</span><span>主路径：无提交调用</span><span>最终确认：人工</span></div></article>
-            <article class="decision searchable" role="button" tabindex="0" data-search="release gate live regression" data-show-detail="release"><div class="decision-head"><h3>静默构建通过不等于兼容微信</h3></div><p>没有真实窗口回归，就不创建原生正式版 tag、Release 或兼容承诺。</p><div class="decision-facts"><span>当前状态：Preview</span><span>发版：暂停</span><span>下一门禁：实测</span></div></article>
+            <article class="decision searchable" role="button" tabindex="0" data-search="local metadata index default off selected folders privacy" data-show-detail="privacy"><div class="decision-head"><h3>本地索引默认关闭，只处理用户选中的资料目录</h3></div><p>索引只保存文件名、完整路径和修改时间；目录授权和索引均可清空。</p><div class="decision-facts"><span>内容读取：无</span><span>网络上传：无</span><span>默认扫描：无</span></div></article>
+            <article class="decision searchable" role="button" tabindex="0" data-search="mode 2 select and confirm safety fallback menu select only" data-show-detail="confirm-choice"><div class="decision-head"><h3>已选择模式 2：默认选中并确认原 Open-file 面板</h3></div><p>菜单可切回“只选中”；安全证据不足一律回退人工。两种模式都不会发送消息。</p><div class="decision-facts"><span>默认：自动确认 Open</span><span>菜单：可改只选中</span><span>发送消息：永不自动</span></div></article>
+            <article class="decision searchable" role="button" tabindex="0" data-search="CI push evidence live regression WeChat Mail" data-show-detail="ci"><div class="decision-head"><h3>本地验证、GitHub CI、真实应用回归是三道不同门禁</h3></div><p>本地代码静默验证已通过；GitHub CI 以 Actions 实时状态为准，微信与邮件窗口仍待实测。</p><div class="decision-facts"><span>本地：通过</span><span>GitHub CI：实时查看</span><span>真实应用：未验证</span></div></article>
           </section>
         </main>
 
         <aside class="detail" id="detail-panel" aria-labelledby="detail-title" aria-live="polite" tabindex="-1">
-          <div class="detail-kicker" id="detail-kicker">CURRENT ARCHITECTURE</div>
-          <h2 id="detail-title">三身份会话模型</h2>
-          <p class="detail-summary" id="detail-summary">宿主应用、真实文件面板和键盘目标分别验证。</p>
+          <div class="detail-kicker" id="detail-kicker">CURRENT FLOW</div>
+          <h2 id="detail-title">从客户名到候选文件</h2>
+          <p class="detail-summary" id="detail-summary">留在当前应用的系统上传窗口里，完成搜索、选中与安全确认。</p>
           <div class="detail-rule"></div>
           <h3>验收证据</h3>
-          <ul class="detail-list" id="detail-list"><li>系统焦点发现真实 Panel owner</li><li>每个 dialog PID 独立 AXObserver</li><li>generation 让旧回调失效</li></ul>
+          <ul class="detail-list" id="detail-list"><li>首次主动选择资料目录</li><li>本机保存 3 个元数据字段</li><li>默认确认原面板，附件进入待发送区</li></ul>
           <div class="detail-rule"></div>
-          <div class="detail-meta"><div><span>状态</span><b id="detail-status">静默验证通过</b></div><div><span>负责人</span><b id="detail-owner">Native App</b></div><div><span>下一门禁</span><b id="detail-gate">真实窗口回归</b></div></div>
+          <div class="detail-meta"><div><span>状态</span><b id="detail-status">本机静默门禁通过</b></div><div><span>负责人</span><b id="detail-owner">Full-stack Team</b></div><div><span>下一门禁</span><b id="detail-gate">真实窗口回归</b></div></div>
           <div class="detail-actions"><button class="primary-action" id="detail-primary" type="button">打开任务流</button><button class="secondary-action" id="detail-close" type="button">收起详情</button></div>
         </aside>
       </div>
@@ -412,19 +466,20 @@
 
   <script>
     const detailData = {
-      architecture: { kicker: 'CURRENT ARCHITECTURE', title: '三身份会话模型', summary: '不再把微信、系统文件面板和键盘事件目标当成同一个进程。', items: ['hostPID 只表示业务宿主', 'dialogOwnerPID 决定 AX 扫描与 Observer', '事件只投递给运行时仍属于原面板的 focused PID'], status: '静默验证通过', owner: 'Native Architecture', gate: '真实窗口回归', page: 'tasks' },
-      flow: { kicker: 'PRODUCT CONTRACT', title: '上传窗口里的搜索', summary: '用户点击上传后自动出现，不要求额外快捷键或页面切换。', items: ['自动识别高置信文件面板', '搜索栏贴附原窗口', '回车精确选中，最终打开人工确认'], status: '已冻结', owner: 'Product', gate: 'Harness + WeChat', page: 'timeline' },
-      ui: { kicker: 'ATTACHED UI', title: '不激活应用的贴附面板', summary: '搜索发生在当前文件窗口上方，不把用户带走。', items: ['无 activate / deactivate', '不加入所有 Space', '负坐标副屏、窄窗口和部分离屏有纯逻辑测试'], status: '静默验证通过', owner: 'AppKit UI', gate: '焦点可见回归', page: 'tasks' },
-      bridge: { kicker: 'FAIL-SAFE BRIDGE', title: '只精确选中，不误确认', summary: '桥接事务可以取消，并在每一步重新确认原窗口和物理文件。', items: ['文件设备号与 inode 回读', '关闭或切换后 generation 失效', '预览版不按最终“打开”、保存或发送'], status: 'Select-only', owner: 'Safety', gate: '真实兼容性', page: 'decisions' },
-      headless: { kicker: 'HEADLESS QA', title: '不干扰电脑的静默门禁', summary: '测试只执行纯逻辑、命令行构建和静态扫描。', items: ['Smoke：搜索、状态机、布局、文件策略', 'Release 构建、plist 与临时签名通过', '测试后无 MacList 或 DialogHarness 图形进程'], status: '通过', owner: 'QA', gate: '真实窗口回归', page: 'tasks' },
-      ci: { kicker: 'CI GATE', title: 'GitHub 完整门禁全绿', summary: '完整 Xcode runner 已验证 Native App 与 Standalone XCTest，仓库、媒体和旧动作检查同步通过。', items: ['Native App：XCTest、smoke、release build', 'Standalone：XCTest 与 CLI smoke', '隐私、链接、媒体和旧动作全部通过'], status: '通过', owner: 'CI', gate: '真实窗口回归', page: 'tasks' },
-      live: { kicker: 'USER GATE', title: '可见回归已暂停', summary: '按照用户要求，当前不启动应用、不抢焦点、不发送键盘事件。', items: ['第一步：标准 NSOpenPanel Harness', '第二步：微信上传文件', '第三步：Apple Mail 与 Outlook'], status: '等待许可', owner: 'Compatibility QA', gate: 'User approval', page: 'timeline' },
-      'wrong-path': { kicker: 'INVALIDATED EVIDENCE', title: '旧测试逻辑已作废', summary: '快捷键启动和独立页面没有覆盖“微信点击上传”这个产品时刻。', items: ['不再引用旧的成功结论', '不再运行居中启动页', '新的通过标准只看原文件窗口'], status: '已作废', owner: 'Product + QA', gate: 'New regression', page: 'timeline' },
-      docs: { kicker: 'DOCUMENTATION', title: '文档只写已经证明的事实', summary: 'README、规格、验收和 Dashboard 已同步到新架构。', items: ['微信兼容仍写未验证', '原生正式版仍写未发布', '旧 Cling/CLI 只作为历史原型'], status: '已同步', owner: 'Knowledge', gate: 'Link check', page: 'knowledge' },
-      native: { kicker: 'PRODUCT DECISION', title: '原生 App 是产品，Skill 是辅助', summary: '监听窗口、贴附 UI 和原面板回填需要一个本地 Swift/AppKit 进程。', items: ['Skill 可负责安装', 'Skill 可负责诊断', '核心体验不能由 Skill 单独提供'], status: '已采用', owner: 'Product + Architecture', gate: 'Native preview', page: 'decisions' },
-      safety: { kicker: 'SAFETY MODEL', title: '零应用切换，零自动发送', summary: '搜索留在原文件窗口，最终打开、收件人和发送都由用户确认。', items: ['无应用激活或停用', '无 Finder、剪贴板或 AppleScript', '无保存覆盖、收件人选择或自动 Send'], status: '静态门禁通过', owner: 'Security + QA', gate: 'Live focus regression', page: 'tasks' },
-      release: { kicker: 'RELEASE GATE', title: '原生正式版暂不发布', summary: '静默构建通过不能替代微信和邮件真实窗口验收。', items: ['不创建新 tag', '不创建 native GitHub Release', '真实回归、签名和公证完成后再评估'], status: '暂停', owner: 'Release Manager', gate: 'Live regression', page: 'timeline' },
-      research: { kicker: 'RESEARCH', title: 'Listary 产品时刻与 macOS 系统边界', summary: '产品借鉴 Listary，实现在 Apple 公开 API 和权限边界内完成。', items: ['Listary Quick Save & Open', 'Apple NSOpenPanel / AXUIElement', 'Cling 仅参考体验，GPL 源码不复制'], status: '已记录', owner: 'Research', gate: 'Primary links', page: 'knowledge' },
+      flow: { kicker: 'DAILY FLOW', title: '上传窗口里的日常流程', summary: '整个过程留在微信或邮件当前上下文，不要求切到 Finder 或独立启动页。', items: ['上传 → 系统文件窗口 → MacList', '输入客户名、项目名或模糊文件名 → 查看候选', '回车 → 精确选中 → 安全确认原 Open-file 面板 → 附件待发送'], status: '模式 2 本机门禁通过', owner: 'Product + Native', gate: '真实窗口回归', page: 'tasks' },
+      'first-run': { kicker: 'FIRST RUN', title: '首次使用只授权资料目录', summary: 'MacList 默认不扫描；只有用户主动选择资料目录后才开始建立索引。', items: ['可多选需要搜索的资料目录', '索引在本机后台建立，不读取文件内容', '菜单已接入选择、更新与确认清空入口'], status: '应用入口已接入', owner: 'Local Index + App', gate: '真实使用回归', page: 'tasks' },
+      implemented: { kicker: 'IMPLEMENTED', title: '已经有本地代码证据的能力', summary: '本地索引核心与搜索结果合并已通过临时沙盒中的静默验证。', items: ['按文件名和路径做模糊匹配，客户/项目目录名参与搜索', '本地索引与 Spotlight 独立更新并合并去重', '同一路径优先使用本地索引记录，查询切换会清掉旧结果'], status: '本地静默验证通过', owner: 'Search + Core', gate: 'GitHub Actions', page: 'tasks' },
+      privacy: { kicker: 'PRIVACY FIELDS', title: '本地只保存 3 个元数据字段', summary: '用户已接受本地保存文件名、完整路径和修改时间；索引不上传。', items: ['文件名：用于直接模糊搜索', '完整路径：用于匹配客户名与项目名', '修改时间：用于候选排序；不读取内容、不收录隐藏项、包或符号链接'], status: '本地优先', owner: 'Privacy + Index', gate: '授权入口复核', page: 'knowledge' },
+      'index-states': { kicker: 'INDEX LIFECYCLE', title: '7 个真实索引状态', summary: '页面与 LocalIndexServiceState 一一对应；“清空”是恢复操作，不是状态。', items: ['disabled / 未设置；indexing / 建立中', 'ready / 已就绪；partial / 部分完成', 'needsRefresh / 需要更新；needsAuthorization / 需重选', 'failed / 失败；已配置或异常时可按状态清空索引与授权'], status: '状态与菜单已接入', owner: 'App + Index', gate: '完整性加固复核', page: 'tasks' },
+      'index-hardening': { kicker: 'HARDENING COMPLETE', title: '索引完整性加固已通过本机门禁', summary: '旧语义缓存不再继承，访问错误不会伪装完整，目录身份变化会清除旧结果并要求重新授权。', items: ['授权目录身份在扫描和提交边界重复核验', '旧格式缓存清理后进入需要更新', '取消、清空、重建并发时旧回调不能覆盖新状态'], status: '本机通过', owner: 'Security + Index', gate: 'GitHub Actions', page: 'tasks' },
+      architecture: { kicker: 'WINDOW ARCHITECTURE', title: '原文件面板三身份模型', summary: '业务宿主、系统文件面板 owner 和键盘目标分别验证，避免无关应用收到输入。', items: ['host PID 只表示微信或邮件等业务宿主', 'dialog owner PID 决定窗口观察与贴附位置', '事件发送前再次确认键盘目标仍属于原会话'], status: '本地代码已实现', owner: 'Native Architecture', gate: '微信与邮件实测', page: 'tasks' },
+      bridge: { kicker: 'FAIL-CLOSED BRIDGE', title: '默认确认 Open，但永不替用户发送', summary: '模式 2 的代码与本机静默门禁已完成；菜单可以切换为只选中。', items: ['只允许当前、精确核对的单文件 Open 面板', 'Save / folder / unknown / multi-select / 旧会话 / 歧义按钮都回退人工', '一次性凭证保证结果不确定时也不会重复按压；永不执行发送消息'], status: '本机通过', owner: 'Safety + Native', gate: '真实窗口回归', page: 'decisions' },
+      headless: { kicker: 'HEADLESS QA', title: '本机静默门禁已通过', summary: '验证使用临时沙盒目录，不扫描真实资料，也不启动微信、邮件或可见测试窗口。', items: ['本地索引、路径匹配与私有存储 smoke 通过', '本地索引与 Spotlight 合并/去重 smoke 通过', '模式 2 拒绝矩阵、一次性凭证、Debug / Release、签名和安装回滚通过'], status: '本机通过', owner: 'QA', gate: 'GitHub Actions → 真实窗口回归', page: 'tasks' },
+      ci: { kicker: 'CI GATE', title: 'GitHub CI 以 Actions 为准', summary: '本地验证与远端工作流分开记录；远端状态始终以 GitHub Actions 实际运行结果为准。', items: ['先完成本地增量与静默验证', '每次推送后观察 GitHub Actions 实际结果', '只有对应提交的工作流通过，才能标记远端门禁通过'], status: '实时状态', owner: 'Release + CI', gate: 'Open GitHub Actions', page: 'timeline' },
+      'confirm-choice': { kicker: 'USER DECISION · MODE 2', title: '默认选中并确认原 Open-file 面板', summary: '模式 2 已实现并通过本机静默门禁。附件进入待发送区后仍由用户决定是否发送；菜单可关闭自动确认。', items: ['默认：精确选中文件后确认当前单文件 Open 面板', '可选：关闭菜单项，回车只选中、用户手动确认', '安全拒绝：Save / folder / unknown / multi-select / old session / ambiguous button'], status: '本机通过', owner: 'Product Safety + Native', gate: '真实窗口回归', page: 'decisions' },
+      live: { kicker: 'UNVERIFIED BOUNDARY', title: '微信与邮件真实窗口尚未验证', summary: '按照用户要求，开发阶段不启动可见应用测试，也不抢当前电脑焦点。', items: ['标准 NSOpenPanel 行为仍需可见回归', '微信上传文件窗口仍未验证', 'Apple Mail 与 Outlook 附件窗口仍未验证'], status: '未验证', owner: 'Compatibility QA', gate: '用户允许后实测', page: 'timeline' },
+      'wrong-path': { kicker: 'INVALIDATED EVIDENCE', title: '旧启动器测试不算成功', summary: '独立页面和全局快捷键没有覆盖“正在微信或邮件上传附件”的真实时刻。', items: ['不再把独立启动页作为主入口', '不再用启动器候选替代系统文件窗口候选', '验收必须围绕原上传窗口展开'], status: '旧结论已作废', owner: 'Product + QA', gate: 'New workflow', page: 'timeline' },
+      native: { kicker: 'PRODUCT DECISION', title: '原生 App 是核心，Skill 是辅助', summary: '持续监听文件窗口、贴附界面和选中候选需要一个本地 Swift/AppKit 进程。', items: ['Skill 可负责安装、升级与诊断', '原生 App 负责窗口、索引和候选交互', '索引与运行时数据全部本地优先'], status: '已采用', owner: 'Product + Architecture', gate: 'Native preview', page: 'decisions' },
     }
 
     const mainContent = document.getElementById('main-content')
