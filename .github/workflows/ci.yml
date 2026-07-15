@@ -50,7 +50,7 @@ jobs:
   native-app:
     name: Native app · automatic dialog flow
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Check out source
@@ -62,8 +62,27 @@ jobs:
       - name: Run framework-free smoke tests
         run: ./app/Scripts/all-smoke-tests.sh
 
-      - name: Build the menu bar app without launching UI
-        run: ./app/Scripts/build-app.sh release
+      - name: Build and verify one private app artifact without launching UI
+        shell: zsh {0}
+        env:
+          MACLIST_SKIP_XCTEST: "1"
+        run: |
+          set -euo pipefail
+          zsh -n app/Scripts/verify.sh
+          external_output="$RUNNER_TEMP/verify-must-not-use-this-output"
+          [[ ! -e "$external_output" ]]
+          APP_OUTPUT_DIR="$external_output" ./app/Scripts/verify.sh
+          [[ ! -e "$external_output" ]]
+
+      - name: Exercise installer success and complete rollback without launching
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          zsh -n app/Scripts/install-local.sh
+          zsh -n app/Scripts/install-local-smoke.sh
+          /bin/zsh app/Scripts/install-local.sh --help | grep -Fq 'not launched unless --launch is supplied'
+          ./app/Scripts/install-local-smoke.sh
+          ! pgrep -x MacList
 
       - name: Enforce the no-switching primary flow
         shell: zsh {0}

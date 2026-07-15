@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 if CommandLine.arguments.contains("--version") {
-    print("MacList 0.3.0-dev")
+    print("MacList 0.3.0")
     exit(EXIT_SUCCESS)
 }
 

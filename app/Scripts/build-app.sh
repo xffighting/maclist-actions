@@ -7,9 +7,20 @@ OUTPUT_DIR="${APP_OUTPUT_DIR:-$ROOT/outputs}"
 MACLIST_APP="$OUTPUT_DIR/MacList.app"
 HARNESS_APP="$OUTPUT_DIR/DialogHarness.app"
 CODE_SIGN_IDENTITY="${MACLIST_CODE_SIGN_IDENTITY:--}"
+EXPECTED_VERSION="$(/usr/bin/tr -d '[:space:]' < "$ROOT/../VERSION")"
+
+[[ -n "$EXPECTED_VERSION" ]] || {
+    print -u2 "VERSION is empty; refusing to build an app bundle."
+    exit 1
+}
 
 swift build --package-path "$ROOT" -c "$CONFIGURATION"
 BIN_DIR="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)"
+ACTUAL_EXECUTABLE_VERSION="$("$BIN_DIR/MacList" --version)"
+[[ "$ACTUAL_EXECUTABLE_VERSION" == "MacList $EXPECTED_VERSION" ]] || {
+    print -u2 "Executable version mismatch: expected 'MacList $EXPECTED_VERSION', got '$ACTUAL_EXECUTABLE_VERSION'"
+    exit 1
+}
 
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$MACLIST_APP" "$HARNESS_APP"
@@ -24,6 +35,10 @@ install -m 0644 "$ROOT/Resources/DialogHarness-Info.plist" "$HARNESS_APP/Content
 
 plutil -lint "$MACLIST_APP/Contents/Info.plist" >/dev/null
 plutil -lint "$HARNESS_APP/Contents/Info.plist" >/dev/null
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$MACLIST_APP/Contents/Info.plist")" == "$EXPECTED_VERSION" ]] || {
+    print -u2 "MacList Info.plist version does not match VERSION."
+    exit 1
+}
 
 sign_app() {
     local app_path="$1"
