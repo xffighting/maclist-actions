@@ -32,6 +32,18 @@ enum LocalIndexMenuPresentationSmoke {
             canClear: true
         )
         assertPresentation(
+            .partial(
+                fileCount: 96,
+                folderCount: 2,
+                generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            ),
+            statusTitle: "本地索引：部分完成（96 个文件，2 个文件夹）",
+            chooseFoldersTitle: "重新选择索引文件夹…",
+            canChooseFolders: true,
+            canRebuild: true,
+            canClear: true
+        )
+        assertPresentation(
             .needsRefresh(folderCount: 2),
             statusTitle: "本地索引：需要更新（2 个文件夹）",
             chooseFoldersTitle: "重新选择索引文件夹…",
@@ -45,7 +57,7 @@ enum LocalIndexMenuPresentationSmoke {
             chooseFoldersTitle: "重新选择索引文件夹…",
             canChooseFolders: true,
             canRebuild: false,
-            canClear: false
+            canClear: true
         )
         assertPresentation(
             .failed,

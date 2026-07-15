@@ -81,6 +81,7 @@ public struct LocalIndexRootPolicy: @unchecked Sendable {
         let homePath = homeDirectory.path
 
         if path == "/" { return true }
+        if path == "/Volumes" { return true }
         if Self.contains(homePath, inside: path) { return true }
 
         let iCloudDrive = Self.canonicalURL(
@@ -107,7 +108,8 @@ public struct LocalIndexRootPolicy: @unchecked Sendable {
         if Self.contains(path, inside: temporaryRoot) { return false }
 
         for protectedRoot in [
-            "/System", "/Library", "/private", "/etc", "/var", "/tmp"
+            "/System", "/Library", "/private", "/etc", "/var", "/tmp",
+            "/usr", "/dev", "/opt"
         ] {
             if Self.contains(path, inside: protectedRoot) { return true }
         }

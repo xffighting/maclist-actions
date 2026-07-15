@@ -27,6 +27,12 @@ public struct LocalIndexMenuPresentation: Equatable, Sendable {
             canChooseFolders = true
             canRebuild = true
             canClear = true
+        case let .partial(fileCount, folderCount, _):
+            statusTitle = "本地索引：部分完成（\(fileCount) 个文件，\(folderCount) 个文件夹）"
+            chooseFoldersTitle = "重新选择索引文件夹…"
+            canChooseFolders = true
+            canRebuild = true
+            canClear = true
         case let .needsRefresh(folderCount):
             statusTitle = "本地索引：需要更新（\(folderCount) 个文件夹）"
             chooseFoldersTitle = "重新选择索引文件夹…"
@@ -38,7 +44,7 @@ public struct LocalIndexMenuPresentation: Equatable, Sendable {
             chooseFoldersTitle = "重新选择索引文件夹…"
             canChooseFolders = true
             canRebuild = false
-            canClear = false
+            canClear = true
         case .failed:
             statusTitle = "本地索引：操作失败"
             chooseFoldersTitle = "重新选择索引文件夹…"

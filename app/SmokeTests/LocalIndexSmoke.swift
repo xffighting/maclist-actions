@@ -139,6 +139,14 @@ enum LocalIndexSmoke {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         try encoder.encode(snapshot).write(to: url)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: url.deletingLastPathComponent().path
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
     }
 
     private static func expectLoadError(

@@ -72,6 +72,7 @@ enum DialogSelectionPolicySmoke {
         try AuthorizedFolderBookmarkSmoke.run()
         try LocalIndexSmoke.run()
         SearchResultSetSmoke.run()
+        SearchEpochSmoke.run()
         print("dialog-selection-policy: ok")
     }
 }

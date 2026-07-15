@@ -3,10 +3,21 @@ import Foundation
 private final class ServiceSmokeBuilder: LocalIndexBuilding, @unchecked Sendable {
     private let lock = NSLock()
     private let returnsCancelledReport: Bool
+    private let reachedLimit: Bool
+    private let reachedVisitLimit: Bool
+    private let inaccessibleRootCount: Int
     private var storedInvocationCount = 0
 
-    init(returnsCancelledReport: Bool = false) {
+    init(
+        returnsCancelledReport: Bool = false,
+        reachedLimit: Bool = false,
+        reachedVisitLimit: Bool = false,
+        inaccessibleRootCount: Int = 0
+    ) {
         self.returnsCancelledReport = returnsCancelledReport
+        self.reachedLimit = reachedLimit
+        self.reachedVisitLimit = reachedVisitLimit
+        self.inaccessibleRootCount = inaccessibleRootCount
     }
 
     var invocationCount: Int {
@@ -37,8 +48,9 @@ private final class ServiceSmokeBuilder: LocalIndexBuilding, @unchecked Sendable
                 rootRevision: rootRevision
             ),
             skippedCount: 0,
-            inaccessibleRootCount: 0,
-            reachedLimit: false,
+            inaccessibleRootCount: inaccessibleRootCount,
+            reachedLimit: reachedLimit,
+            reachedVisitLimit: reachedVisitLimit,
             wasCancelled: returnsCancelledReport
         )
     }
@@ -91,7 +103,10 @@ enum LocalIndexServiceSmoke {
         try await matchingRevisionLoadsCache()
         try await mismatchedRevisionDoesNotLoadOrBuild()
         try await cancelledReportDoesNotCommit()
+        try await rootReplacementDuringBuildDoesNotCommit()
+        try await replacementCancellationDeletesOldIndex()
         try await replacementPersistsRevisionAndPublishes()
+        try await incompleteReportsPublishPartialAndPersist()
         try await clearPreventsObsoleteBuildFromReturning()
         print("local-index-service: ok")
     }
@@ -228,6 +243,103 @@ enum LocalIndexServiceSmoke {
         }
     }
 
+    private static func replacementCancellationDeletesOldIndex() async throws {
+        try await withSandbox("replace-cancelled") { sandbox in
+            let oldFolder = try makeFolder(in: sandbox, name: "旧客户资料")
+            let newFolder = try makeFolder(in: sandbox, name: "新客户资料")
+            let oldBookmark = try AuthorizedFolderBookmark.create(for: oldFolder)
+            let newBookmark = try AuthorizedFolderBookmark.create(for: newFolder)
+            let oldRevision = UUID()
+            let oldSnapshot = makeSnapshot(
+                root: oldFolder,
+                revision: oldRevision,
+                generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+            let stores = makeStores(in: sandbox)
+            try stores.authorized.save(AuthorizedFolderSet(
+                revision: oldRevision,
+                folders: [oldBookmark]
+            ))
+            try stores.index.save(oldSnapshot)
+            let provider = LocalIndexProvider(snapshot: oldSnapshot)
+            let builder = ServiceSmokeBuilder(returnsCancelledReport: true)
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: builder
+            )
+
+            try await service.replaceAuthorizedFolders([newBookmark])
+
+            let replacement = try stores.authorized.loadSet()
+            precondition(replacement.folders == [newBookmark])
+            precondition(replacement.revision != oldRevision)
+            precondition(provider.snapshot == .empty)
+            let persistedIndex = try stores.index.loadIfPresent()
+            precondition(
+                persistedIndex == nil,
+                "new authorization must invalidate the old index before a cancelled build returns"
+            )
+            guard case .needsRefresh(folderCount: 1) = await service.state else {
+                preconditionFailure("cancelled replacement must remain pending refresh")
+            }
+        }
+    }
+
+    private static func rootReplacementDuringBuildDoesNotCommit() async throws {
+        try await withSandbox("root-replaced") { sandbox in
+            let folder = try makeFolder(in: sandbox)
+            let movedFolder = sandbox.appendingPathComponent("客户资料-原目录", isDirectory: true)
+            let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+            let stores = makeStores(in: sandbox)
+            let provider = LocalIndexProvider()
+            let builder = ServiceSmokeBlockingBuilder()
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: builder
+            )
+            let replacement = Task {
+                try await service.replaceAuthorizedFolders([bookmark])
+            }
+            precondition(
+                builder.waitUntilBuildStarts(),
+                "root replacement must happen after the build captures its authorization"
+            )
+            defer { builder.finishBuild() }
+
+            try FileManager.default.moveItem(at: folder, to: movedFolder)
+            try FileManager.default.createDirectory(
+                at: folder,
+                withIntermediateDirectories: true
+            )
+            precondition(FileManager.default.createFile(
+                atPath: folder.appendingPathComponent("冒名文件.pdf").path,
+                contents: Data("replacement".utf8)
+            ))
+            builder.finishBuild()
+            _ = try? await replacement.value
+
+            precondition(
+                provider.snapshot == .empty,
+                "a directory recreated at the same path must not inherit authorization"
+            )
+            let persistedIndex = try stores.index.loadIfPresent()
+            precondition(
+                persistedIndex == nil,
+                "a build whose root identity changed must not be persisted"
+            )
+            switch await service.state {
+            case .needsRefresh(folderCount: 1), .needsAuthorization:
+                break
+            default:
+                preconditionFailure("replaced root must require refresh or authorization")
+            }
+        }
+    }
+
     private static func replacementPersistsRevisionAndPublishes() async throws {
         try await withSandbox("replace") { sandbox in
             let folder = try makeFolder(in: sandbox)
@@ -252,6 +364,53 @@ enum LocalIndexServiceSmoke {
             precondition(builder.invocationCount == 1)
             guard case .ready(fileCount: 1, folderCount: 1, generatedAt: _) = await service.state else {
                 preconditionFailure("replacement should become ready")
+            }
+        }
+    }
+
+    private static func incompleteReportsPublishPartialAndPersist() async throws {
+        let scenarios: [(
+            name: String,
+            reachedLimit: Bool,
+            reachedVisitLimit: Bool,
+            inaccessibleRootCount: Int
+        )] = [
+            ("file-limit", true, false, 0),
+            ("visit-limit", false, true, 0),
+            ("inaccessible-root", false, false, 1),
+        ]
+
+        for scenario in scenarios {
+            try await withSandbox("partial-\(scenario.name)") { sandbox in
+                let folder = try makeFolder(in: sandbox)
+                let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+                let stores = makeStores(in: sandbox)
+                let provider = LocalIndexProvider()
+                let builder = ServiceSmokeBuilder(
+                    reachedLimit: scenario.reachedLimit,
+                    reachedVisitLimit: scenario.reachedVisitLimit,
+                    inaccessibleRootCount: scenario.inaccessibleRootCount
+                )
+                let service = LocalIndexService(
+                    provider: provider,
+                    authorizedFolderStore: stores.authorized,
+                    indexStore: stores.index,
+                    indexer: builder
+                )
+
+                try await service.replaceAuthorizedFolders([bookmark])
+
+                let storedSnapshot = try stores.index.load()
+                precondition(provider.snapshot == storedSnapshot)
+                precondition(storedSnapshot.entries.count == 1)
+                guard case .partial(
+                    fileCount: 1,
+                    folderCount: 1,
+                    generatedAt: let generatedAt
+                ) = await service.state else {
+                    preconditionFailure("\(scenario.name) must be partial, never ready")
+                }
+                precondition(generatedAt == storedSnapshot.generatedAt)
             }
         }
     }
@@ -307,8 +466,11 @@ enum LocalIndexServiceSmoke {
         try await operation(sandbox)
     }
 
-    private static func makeFolder(in sandbox: URL) throws -> URL {
-        let folder = sandbox.appendingPathComponent("客户资料", isDirectory: true)
+    private static func makeFolder(
+        in sandbox: URL,
+        name: String = "客户资料"
+    ) throws -> URL {
+        let folder = sandbox.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(
             at: folder,
             withIntermediateDirectories: true

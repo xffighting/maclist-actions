@@ -46,7 +46,7 @@ final class SearchPanelController: NSWindowController,
     private let emptyStateLabel = NSTextField(wrappingLabelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let instructionLabel = NSTextField(
-        labelWithString: "↑↓ 移动  ·  ↩ 选中  ·  再点打开  ·  Esc 收起"
+        labelWithString: "↑↓ 移动  ·  ↩ 选中  ·  再点原窗口确认  ·  Esc 收起"
     )
     private var expandedConstraints: [NSLayoutConstraint] = []
 
@@ -55,11 +55,12 @@ final class SearchPanelController: NSWindowController,
     private var interactionState = DialogInteractionState()
     private var searchResults = SearchResultSet()
     private var displayedRecords: [FileRecord] = []
-    private var queryGeneration = UUID()
+    private var searchEpoch = SearchEpoch()
     private var queryCancellation: SpotlightQueryCancellation?
     private var focusGeneration = UUID()
     private var lastHandledQuery = ""
     private var searchPhase: CandidateSearchPhase = .idle
+    private var localIndexState: LocalIndexServiceState = .disabled
     private var isExpanded = false
     private var isSuppressed = false
     private var isSubmitting = false
@@ -101,19 +102,31 @@ final class SearchPanelController: NSWindowController,
     }
 
     func preloadRecentFiles() {
-        let generation = UUID()
-        queryGeneration = generation
-        loadLocalIndexRecords(for: "", generation: generation)
-        loadSpotlightRecords(for: "", showLoadingState: false, generation: generation)
+        let token = searchEpoch.beginQuery()
+        loadLocalIndexRecords(for: "", token: token)
+        loadSpotlightRecords(
+            for: "",
+            showLoadingState: false,
+            generation: token.queryID
+        )
     }
 
     func refreshLocalIndex() {
+        let token = searchEpoch.refreshLocalIndex()
         searchResults.clear(source: .localIndex)
         applySearch()
         loadLocalIndexRecords(
             for: searchField.stringValue,
-            generation: queryGeneration
+            token: token
         )
+    }
+
+    func updateLocalIndexState(_ state: LocalIndexServiceState) {
+        localIndexState = state
+        searchField.placeholderString = searchPlaceholder
+        if isExpanded {
+            updateCandidatePresentation()
+        }
     }
 
     func attach(to session: FileDialogSession, dialog: ObservedDialog) {
@@ -123,7 +136,7 @@ final class SearchPanelController: NSWindowController,
 
         if isNewDialog {
             focusGeneration = UUID()
-            queryGeneration = UUID()
+            searchEpoch.invalidateAll()
             queryCancellation?.cancel()
             queryCancellation = nil
             selectionOperation?.cancel()
@@ -133,7 +146,7 @@ final class SearchPanelController: NSWindowController,
             searchField.stringValue = ""
             lastHandledQuery = ""
             searchPhase = .idle
-            searchField.placeholderString = "搜索客户、项目或文件"
+            searchField.placeholderString = searchPlaceholder
             applySearch()
             setExpanded(false)
         }
@@ -157,7 +170,7 @@ final class SearchPanelController: NSWindowController,
     func detach() {
         interactionState.detach()
         focusGeneration = UUID()
-        queryGeneration = UUID()
+        searchEpoch.invalidateAll()
         queryCancellation?.cancel()
         queryCancellation = nil
         selectionOperation?.cancel()
@@ -304,7 +317,7 @@ final class SearchPanelController: NSWindowController,
         contentView.addSubview(effect)
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.placeholderString = "搜索客户、项目或文件"
+        searchField.placeholderString = searchPlaceholder
         searchField.controlSize = .large
         searchField.delegate = self
         searchField.sendsSearchStringImmediately = true
@@ -417,15 +430,14 @@ final class SearchPanelController: NSWindowController,
 
         searchPhase = hasQuery ? .loading : .idle
         setExpanded(hasQuery)
-        queryGeneration = UUID()
+        let token = searchEpoch.beginQuery()
         queryCancellation?.cancel()
         queryCancellation = nil
         searchResults.clearAll()
         applySearch()
         if hasQuery {
-            let generation = queryGeneration
-            loadLocalIndexRecords(for: query, generation: generation)
-            scheduleSpotlightQuery(generation: generation)
+            loadLocalIndexRecords(for: query, token: token)
+            scheduleSpotlightQuery(generation: token.queryID)
         }
     }
 
@@ -460,7 +472,7 @@ final class SearchPanelController: NSWindowController,
         let query = searchField.stringValue
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            guard let self, self.queryGeneration == generation else { return }
+            guard let self, self.searchEpoch.acceptsQuery(generation) else { return }
             self.loadSpotlightRecords(
                 for: query,
                 showLoadingState: true,
@@ -470,7 +482,7 @@ final class SearchPanelController: NSWindowController,
         }
     }
 
-    private func loadLocalIndexRecords(for query: String, generation: UUID) {
+    private func loadLocalIndexRecords(for query: String, token: SearchEpochToken) {
         let provider = localIndexProvider
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let records: [FileRecord]
@@ -480,7 +492,7 @@ final class SearchPanelController: NSWindowController,
                 records = provider.matchingFiles(query)
             }
             DispatchQueue.main.async {
-                guard let self, self.queryGeneration == generation else { return }
+                guard let self, self.searchEpoch.accepts(token) else { return }
                 self.logger.notice(
                     "local query completed provider=\(records.count, privacy: .public)"
                 )
@@ -511,7 +523,7 @@ final class SearchPanelController: NSWindowController,
             }
             DispatchQueue.main.async {
                 guard let self else { return }
-                if let generation, self.queryGeneration != generation { return }
+                if let generation, !self.searchEpoch.acceptsQuery(generation) { return }
                 if let cancellation, self.queryCancellation === cancellation {
                     self.queryCancellation = nil
                 }
@@ -549,14 +561,26 @@ final class SearchPanelController: NSWindowController,
             emptyStateLabel.isHidden = false
             switch searchPhase {
             case .idle:
-                emptyStateLabel.stringValue = "输入客户名、项目名或文件名"
+                emptyStateLabel.stringValue = localPathSearchAvailable
+                    ? "输入客户名、项目名或文件名"
+                    : "输入文件名开始搜索"
                 statusLabel.stringValue = ""
             case .loading:
                 emptyStateLabel.stringValue = "正在搜索这台 Mac…"
-                statusLabel.stringValue = "支持客户名、项目名、文件名和路径片段"
+                if localPathSearchAvailable {
+                    statusLabel.stringValue = "支持客户名、项目名、文件名和路径片段"
+                } else if localIndexIsBuilding {
+                    statusLabel.stringValue = "客户/项目索引正在建立 · 当前先按文件名搜索"
+                } else {
+                    statusLabel.stringValue = "当前按文件名搜索 · 菜单可选择资料文件夹"
+                }
             case .ready:
-                emptyStateLabel.stringValue = "没有找到匹配文件\n请尝试客户名、项目名或更短片段"
-                statusLabel.stringValue = "本机文件查询已完成"
+                emptyStateLabel.stringValue = localPathSearchAvailable
+                    ? "没有找到匹配文件\n请尝试客户名、项目名或更短片段"
+                    : "没有找到匹配文件\n请尝试更短的文件名"
+                statusLabel.stringValue = localPathSearchAvailable
+                    ? "本地索引与 Spotlight 查询已完成"
+                    : "Spotlight 文件名查询已完成"
             case let .failed(message):
                 emptyStateLabel.stringValue = "搜索暂时不可用\n请稍后重试"
                 statusLabel.stringValue = message
@@ -574,6 +598,26 @@ final class SearchPanelController: NSWindowController,
         case .idle, .ready:
             statusLabel.stringValue = "\(displayedRecords.count) 个匹配 · 只读取文件名、路径和修改时间"
         }
+    }
+
+    private var localPathSearchAvailable: Bool {
+        switch localIndexState {
+        case .ready, .partial:
+            return true
+        case .disabled, .indexing, .needsRefresh, .needsAuthorization, .failed:
+            return false
+        }
+    }
+
+    private var localIndexIsBuilding: Bool {
+        if case .indexing = localIndexState { return true }
+        return false
+    }
+
+    private var searchPlaceholder: String {
+        localPathSearchAvailable
+            ? "搜索客户、项目或文件"
+            : "搜索文件名 · 菜单可开启客户/项目搜索"
     }
 
     private func syncCandidateColumnWidth() {

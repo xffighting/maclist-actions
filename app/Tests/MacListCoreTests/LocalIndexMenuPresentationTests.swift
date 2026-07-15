@@ -44,6 +44,25 @@ final class LocalIndexMenuPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.canClear)
     }
 
+    func testPartialShowsCountsAndKeepsEveryRecoveryActionAvailable() {
+        let presentation = LocalIndexMenuPresentation(
+            state: .partial(
+                fileCount: 96,
+                folderCount: 2,
+                generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+        )
+
+        XCTAssertEqual(
+            presentation.statusTitle,
+            "本地索引：部分完成（96 个文件，2 个文件夹）"
+        )
+        XCTAssertEqual(presentation.chooseFoldersTitle, "重新选择索引文件夹…")
+        XCTAssertTrue(presentation.canChooseFolders)
+        XCTAssertTrue(presentation.canRebuild)
+        XCTAssertTrue(presentation.canClear)
+    }
+
     func testNeedsRefreshKeepsEveryRecoveryActionAvailable() {
         let presentation = LocalIndexMenuPresentation(
             state: .needsRefresh(folderCount: 2)
@@ -63,7 +82,7 @@ final class LocalIndexMenuPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.chooseFoldersTitle, "重新选择索引文件夹…")
         XCTAssertTrue(presentation.canChooseFolders)
         XCTAssertFalse(presentation.canRebuild)
-        XCTAssertFalse(presentation.canClear)
+        XCTAssertTrue(presentation.canClear)
     }
 
     func testFailedOffersReselectionAndClearButNotRebuild() {

@@ -62,6 +62,52 @@ final class LocalIndexRootPolicyTests: XCTestCase {
         }
     }
 
+    func testRejectsAdditionalSystemAndVolumesRootsAsTooBroad() throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let home = sandbox.appendingPathComponent("fake-home", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+
+        let policy = LocalIndexRootPolicy(homeDirectory: home, fileManager: .default, maxRoots: 8)
+        let rejectedRoots = [
+            URL(fileURLWithPath: "/usr", isDirectory: true),
+            URL(fileURLWithPath: "/usr/bin", isDirectory: true),
+            URL(fileURLWithPath: "/usr/local/maclist-policy-probe", isDirectory: true),
+            URL(fileURLWithPath: "/dev", isDirectory: true),
+            URL(fileURLWithPath: "/dev/fd", isDirectory: true),
+            URL(fileURLWithPath: "/dev/maclist-policy-probe", isDirectory: true),
+            URL(fileURLWithPath: "/opt", isDirectory: true),
+            URL(fileURLWithPath: "/opt/maclist-policy-probe", isDirectory: true),
+            URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        ]
+
+        for root in rejectedRoots {
+            assertRootTooBroad(root, policy: policy)
+        }
+    }
+
+    func testDoesNotBlanketRejectASelectedFolderBelowASpecificVolume() throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let home = sandbox.appendingPathComponent("fake-home", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let policy = LocalIndexRootPolicy(homeDirectory: home, fileManager: .default, maxRoots: 8)
+        let selectedFolder = URL(
+            fileURLWithPath: "/Volumes/MacList-Nonexistent-\(UUID().uuidString)/客户资料",
+            isDirectory: true
+        )
+
+        XCTAssertThrowsError(try policy.validate([selectedFolder])) { error in
+            guard case .invalidRoot = error as? LocalIndexRootPolicyError else {
+                return XCTFail(
+                    "a folder below a specific volume may fail existence validation, but must not be classified as too broad: \(error)"
+                )
+            }
+        }
+    }
+
     func testAllowsExistingTemporaryAndApprovedCloudStorageRoots() throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }
@@ -150,6 +196,29 @@ final class LocalIndexRootPolicyTests: XCTestCase {
             XCTAssertTrue(
                 error is LocalIndexRootPolicyError,
                 "unexpected error type: \(error)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private func assertRootTooBroad(
+        _ root: URL,
+        policy: LocalIndexRootPolicy,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try policy.validate([root]), file: file, line: line) { error in
+            guard case let .rootTooBroad(path) = error as? LocalIndexRootPolicyError else {
+                return XCTFail(
+                    "expected rootTooBroad for \(root.path), got: \(error)",
+                    file: file,
+                    line: line
+                )
+            }
+            XCTAssertEqual(
+                path,
+                root.resolvingSymlinksInPath().standardizedFileURL.path,
                 file: file,
                 line: line
             )

@@ -74,6 +74,27 @@ enum LocalIndexRootPolicySmoke {
             try expectPolicyRejection([root], by: policy)
         }
 
+        let additionalBroadRoots = [
+            URL(fileURLWithPath: "/usr", isDirectory: true),
+            URL(fileURLWithPath: "/usr/bin", isDirectory: true),
+            URL(fileURLWithPath: "/usr/local/maclist-policy-probe", isDirectory: true),
+            URL(fileURLWithPath: "/dev", isDirectory: true),
+            URL(fileURLWithPath: "/dev/fd", isDirectory: true),
+            URL(fileURLWithPath: "/dev/maclist-policy-probe", isDirectory: true),
+            URL(fileURLWithPath: "/opt", isDirectory: true),
+            URL(fileURLWithPath: "/opt/maclist-policy-probe", isDirectory: true),
+            URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        ]
+        for root in additionalBroadRoots {
+            try expectRootTooBroad(root, by: policy)
+        }
+
+        let missingSelectedVolumeFolder = URL(
+            fileURLWithPath: "/Volumes/MacList-Nonexistent-\(UUID().uuidString)/客户资料",
+            isDirectory: true
+        )
+        try expectInvalidRootWithoutBroadRejection(missingSelectedVolumeFolder, by: policy)
+
         let file = sandbox.appendingPathComponent("not-a-directory.txt")
         let missing = sandbox.appendingPathComponent("missing", isDirectory: true)
         try Data("file".utf8).write(to: file)
@@ -113,6 +134,41 @@ enum LocalIndexRootPolicySmoke {
             )
         } catch is LocalIndexRootPolicyError {
             // Expected: policy failures use one explicit fail-closed error type.
+        }
+    }
+
+    private static func expectRootTooBroad(
+        _ root: URL,
+        by policy: LocalIndexRootPolicy
+    ) throws {
+        do {
+            _ = try policy.validate([root])
+            preconditionFailure("broad system root must be rejected: \(root.path)")
+        } catch let LocalIndexRootPolicyError.rootTooBroad(path) {
+            precondition(
+                path == root.resolvingSymlinksInPath().standardizedFileURL.path,
+                "rootTooBroad must report the canonical rejected path"
+            )
+        } catch {
+            preconditionFailure(
+                "expected rootTooBroad for \(root.path), got: \(error)"
+            )
+        }
+    }
+
+    private static func expectInvalidRootWithoutBroadRejection(
+        _ root: URL,
+        by policy: LocalIndexRootPolicy
+    ) throws {
+        do {
+            _ = try policy.validate([root])
+            preconditionFailure("the synthetic volume folder should not exist: \(root.path)")
+        } catch LocalIndexRootPolicyError.invalidRoot {
+            // Missing is expected; the breadth policy must still allow a specific volume subtree.
+        } catch {
+            preconditionFailure(
+                "a specific volume subtree must not be classified as too broad: \(error)"
+            )
         }
     }
 }

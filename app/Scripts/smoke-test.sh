@@ -14,6 +14,7 @@ swiftc \
   "$ROOT/SmokeTests/AuthorizedFolderBookmarkSmoke.swift" \
   "$ROOT/SmokeTests/LocalIndexSmoke.swift" \
   "$ROOT/SmokeTests/SearchResultSetSmoke.swift" \
+  "$ROOT/SmokeTests/SearchEpochSmoke.swift" \
   "$ROOT/SmokeTests/DialogSelectionPolicySmoke.swift" \
   -o "$BUILD_DIR/dialog-selection-policy-smoke"
 

@@ -50,13 +50,15 @@ public struct LocalIndexSnapshot: Codable, Equatable, Sendable {
     public let roots: [String]
     public let entries: [LocalIndexEntry]
     public let rootRevision: UUID?
+    public let isComplete: Bool
 
     public init(
         formatVersion: Int = LocalIndexSnapshot.currentFormatVersion,
         generatedAt: Date,
         roots: [String],
         entries: [LocalIndexEntry],
-        rootRevision: UUID? = nil
+        rootRevision: UUID? = nil,
+        isComplete: Bool = true
     ) {
         self.formatVersion = formatVersion
         let milliseconds = (generatedAt.timeIntervalSince1970 * 1_000).rounded(.towardZero)
@@ -64,10 +66,40 @@ public struct LocalIndexSnapshot: Codable, Equatable, Sendable {
         self.roots = roots
         self.entries = entries
         self.rootRevision = rootRevision
+        self.isComplete = isComplete
     }
 
     public static var empty: LocalIndexSnapshot {
         LocalIndexSnapshot(generatedAt: .distantPast, roots: [], entries: [])
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case formatVersion
+        case generatedAt
+        case roots
+        case entries
+        case rootRevision
+        case isComplete
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try container.decode(Int.self, forKey: .formatVersion)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        roots = try container.decode([String].self, forKey: .roots)
+        entries = try container.decode([LocalIndexEntry].self, forKey: .entries)
+        rootRevision = try container.decodeIfPresent(UUID.self, forKey: .rootRevision)
+        isComplete = try container.decodeIfPresent(Bool.self, forKey: .isComplete) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(formatVersion, forKey: .formatVersion)
+        try container.encode(generatedAt, forKey: .generatedAt)
+        try container.encode(roots, forKey: .roots)
+        try container.encode(entries, forKey: .entries)
+        try container.encodeIfPresent(rootRevision, forKey: .rootRevision)
+        try container.encode(isComplete, forKey: .isComplete)
     }
 }
 
@@ -225,7 +257,10 @@ public final class LocalFileIndexer: @unchecked Sendable {
                 generatedAt: generatedAt,
                 roots: authorizedRoots.map(\.path),
                 entries: entries,
-                rootRevision: rootRevision
+                rootRevision: rootRevision,
+                isComplete: !reachedLimit
+                    && !reachedVisitLimit
+                    && max(0, roots.count - authorizedRoots.count) == 0
             ),
             skippedCount: skippedCount,
             inaccessibleRootCount: max(0, roots.count - authorizedRoots.count),
@@ -345,20 +380,8 @@ public final class LocalIndexStore: @unchecked Sendable {
         guard fileManager.fileExists(atPath: url.path) else {
             throw LocalIndexStoreError.notFound
         }
-        let resourceValues = try url.resourceValues(forKeys: [
-            .isSymbolicLinkKey,
-            .fileSizeKey
-        ])
-        guard resourceValues.isSymbolicLink != true else {
-            throw LocalIndexStoreError.insecureStore
-        }
-        guard (resourceValues.fileSize ?? 0) <= limits.maximumBytes else {
-            throw LocalIndexStoreError.tooLarge
-        }
-        let data = try Data(contentsOf: url)
-        guard data.count <= limits.maximumBytes else {
-            throw LocalIndexStoreError.tooLarge
-        }
+        try validateOwnershipAndPermissions()
+        let data = try readPrivately()
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         let snapshot = try decoder.decode(LocalIndexSnapshot.self, from: data)
@@ -370,7 +393,6 @@ public final class LocalIndexStore: @unchecked Sendable {
             throw LocalIndexStoreError.tooLarge
         }
         try validateScope(snapshot)
-        try validateOwnershipAndPermissions()
         return snapshot
     }
 
@@ -416,6 +438,11 @@ public final class LocalIndexStore: @unchecked Sendable {
         }
         let values = try directory.resourceValues(forKeys: [.isSymbolicLinkKey])
         guard values.isSymbolicLink != true else {
+            throw LocalIndexStoreError.insecureStore
+        }
+        let attributes = try fileManager.attributesOfItem(atPath: directory.path)
+        let owner = (attributes[.ownerAccountID] as? NSNumber)?.uint32Value
+        guard owner == geteuid() else {
             throw LocalIndexStoreError.insecureStore
         }
         try fileManager.setAttributes(
@@ -470,8 +497,61 @@ public final class LocalIndexStore: @unchecked Sendable {
         let attributes = try fileManager.attributesOfItem(atPath: url.path)
         let owner = (attributes[.ownerAccountID] as? NSNumber)?.uint32Value
         let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0
-        guard owner == getuid(), permissions & 0o077 == 0 else {
+        guard owner == geteuid(), permissions & 0o077 == 0 else {
             throw LocalIndexStoreError.insecureStore
+        }
+
+        let directory = url.deletingLastPathComponent()
+        let directoryValues = try directory.resourceValues(forKeys: [.isSymbolicLinkKey])
+        let directoryAttributes = try fileManager.attributesOfItem(atPath: directory.path)
+        let directoryOwner =
+            (directoryAttributes[.ownerAccountID] as? NSNumber)?.uint32Value
+        let directoryPermissions =
+            (directoryAttributes[.posixPermissions] as? NSNumber)?.intValue ?? 0
+        guard directoryValues.isSymbolicLink != true,
+              directoryOwner == geteuid(),
+              directoryPermissions & 0o077 == 0 else {
+            throw LocalIndexStoreError.insecureStore
+        }
+    }
+
+    private func readPrivately() throws -> Data {
+        let descriptor = url.path.withCString { path in
+            Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        }
+        guard descriptor >= 0 else {
+            if errno == ENOENT { throw LocalIndexStoreError.notFound }
+            throw LocalIndexStoreError.insecureStore
+        }
+
+        var information = stat()
+        guard Darwin.fstat(descriptor, &information) == 0 else {
+            Darwin.close(descriptor)
+            throw LocalIndexStoreError.insecureStore
+        }
+        guard information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == geteuid(),
+              Int(information.st_mode & 0o077) == 0 else {
+            Darwin.close(descriptor)
+            throw LocalIndexStoreError.insecureStore
+        }
+        guard information.st_size >= 0,
+              UInt64(information.st_size) <= UInt64(limits.maximumBytes) else {
+            Darwin.close(descriptor)
+            throw LocalIndexStoreError.tooLarge
+        }
+
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        do {
+            let data = try handle.read(upToCount: limits.maximumBytes + 1) ?? Data()
+            try handle.close()
+            guard data.count <= limits.maximumBytes else {
+                throw LocalIndexStoreError.tooLarge
+            }
+            return data
+        } catch {
+            try? handle.close()
+            throw error
         }
     }
 }

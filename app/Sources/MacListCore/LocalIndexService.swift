@@ -29,6 +29,7 @@ public enum LocalIndexServiceState: Equatable, Sendable {
     case disabled
     case indexing(folderCount: Int)
     case ready(fileCount: Int, folderCount: Int, generatedAt: Date)
+    case partial(fileCount: Int, folderCount: Int, generatedAt: Date)
     case needsRefresh(folderCount: Int)
     case needsAuthorization
     case failed
@@ -77,11 +78,19 @@ public actor LocalIndexService {
                 return
             }
             provider.replaceSnapshot(snapshot)
-            state = .ready(
-                fileCount: snapshot.entries.count,
-                folderCount: authorizedRoots.count,
-                generatedAt: snapshot.generatedAt
-            )
+            if snapshot.isComplete {
+                state = .ready(
+                    fileCount: snapshot.entries.count,
+                    folderCount: authorizedRoots.count,
+                    generatedAt: snapshot.generatedAt
+                )
+            } else {
+                state = .partial(
+                    fileCount: snapshot.entries.count,
+                    folderCount: authorizedRoots.count,
+                    generatedAt: snapshot.generatedAt
+                )
+            }
         } catch is AuthorizedFolderStoreError {
             state = .needsAuthorization
         } catch is AuthorizedFolderBookmarkError {
@@ -103,6 +112,7 @@ public actor LocalIndexService {
         let authorization = AuthorizedFolderSet(folders: acceptedFolders)
         do {
             try authorizedFolderStore.save(authorization)
+            try indexStore.clear()
         } catch {
             state = .failed
             throw error
@@ -155,13 +165,19 @@ public actor LocalIndexService {
 
     private func rebuild(using authorization: AuthorizedFolderSet) async {
         let authorizedRoots: [URL]
+        let rootIdentities: [LocalIndexRootIdentity]
         do {
             authorizedRoots = try resolveAuthorizedRoots(authorization)
+            rootIdentities = try authorizedRoots.map(LocalIndexRootIdentity.capture)
         } catch is AuthorizedFolderBookmarkError {
             provider.clear()
             state = .needsAuthorization
             return
         } catch is LocalIndexRootPolicyError {
+            provider.clear()
+            state = .needsAuthorization
+            return
+        } catch is LocalIndexRootIdentityError {
             provider.clear()
             state = .needsAuthorization
             return
@@ -178,12 +194,37 @@ public actor LocalIndexService {
         let revision = authorization.revision
         let generatedAt = Date()
         let worker = Task.detached(priority: .utility) {
-            indexer.buildSnapshot(
+            guard rootIdentities.allSatisfy({ $0.matchesCurrentDirectory() }) else {
+                return LocalIndexingReport(
+                    snapshot: LocalIndexSnapshot(
+                        generatedAt: generatedAt,
+                        roots: authorizedRoots.map(\.path),
+                        entries: [],
+                        rootRevision: revision
+                    ),
+                    skippedCount: 0,
+                    inaccessibleRootCount: authorizedRoots.count,
+                    reachedLimit: false,
+                    wasCancelled: true
+                )
+            }
+            let report = indexer.buildSnapshot(
                 roots: authorizedRoots,
                 generatedAt: generatedAt,
                 rootRevision: revision,
                 isCancelled: { Task<Never, Never>.isCancelled }
             )
+            guard rootIdentities.allSatisfy({ $0.matchesCurrentDirectory() }) else {
+                return LocalIndexingReport(
+                    snapshot: report.snapshot,
+                    skippedCount: report.skippedCount,
+                    inaccessibleRootCount: report.inaccessibleRootCount,
+                    reachedLimit: report.reachedLimit,
+                    reachedVisitLimit: report.reachedVisitLimit,
+                    wasCancelled: true
+                )
+            }
+            return report
         }
         runningTask = worker
         let report = await worker.value
@@ -200,7 +241,10 @@ public actor LocalIndexService {
             generatedAt: report.snapshot.generatedAt,
             roots: authorizedRoots.map(\.path),
             entries: report.snapshot.entries,
-            rootRevision: revision
+            rootRevision: revision,
+            isComplete: !report.reachedLimit
+                && !report.reachedVisitLimit
+                && report.inaccessibleRootCount == 0
         )
         do {
             let currentAuthorization = try authorizedFolderStore.loadSet()
@@ -211,11 +255,21 @@ public actor LocalIndexService {
             try indexStore.save(snapshot)
             guard runID == generation else { return }
             provider.replaceSnapshot(snapshot)
-            state = .ready(
-                fileCount: snapshot.entries.count,
-                folderCount: authorizedRoots.count,
-                generatedAt: snapshot.generatedAt
-            )
+            if report.reachedLimit
+                || report.reachedVisitLimit
+                || report.inaccessibleRootCount > 0 {
+                state = .partial(
+                    fileCount: snapshot.entries.count,
+                    folderCount: authorizedRoots.count,
+                    generatedAt: snapshot.generatedAt
+                )
+            } else {
+                state = .ready(
+                    fileCount: snapshot.entries.count,
+                    folderCount: authorizedRoots.count,
+                    generatedAt: snapshot.generatedAt
+                )
+            }
         } catch is AuthorizedFolderStoreError {
             provider.clear()
             state = .needsAuthorization

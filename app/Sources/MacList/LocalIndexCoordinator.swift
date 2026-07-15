@@ -29,6 +29,7 @@ final class LocalIndexCoordinator {
 
     func bind(panelController: SearchPanelController) {
         self.panelController = panelController
+        panelController.updateLocalIndexState(state)
     }
 
     func bootstrap() {
@@ -52,12 +53,17 @@ final class LocalIndexCoordinator {
         panel.resolvesAliases = true
         panel.canCreateDirectories = false
 
+        let previousApplication = NSWorkspace.shared.frontmostApplication
         if #available(macOS 14.0, *) {
             NSApp.activate()
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
         panel.begin { [weak self] response in
+            if previousApplication?.processIdentifier
+                != ProcessInfo.processInfo.processIdentifier {
+                previousApplication?.activate(options: [.activateIgnoringOtherApps])
+            }
             guard response == .OK, let self else { return }
             let urls = panel.urls
             Task { @MainActor [weak self] in
@@ -69,6 +75,7 @@ final class LocalIndexCoordinator {
     func rebuild() {
         guard menuPresentation.canRebuild else { return }
         state = .indexing(folderCount: configuredFolderCount)
+        panelController?.updateLocalIndexState(state)
         notifyStateChange()
         Task { @MainActor [weak self, service] in
             await service.rebuild()
@@ -109,6 +116,7 @@ final class LocalIndexCoordinator {
         do {
             let bookmarks = try urls.map { try AuthorizedFolderBookmark.create(for: $0) }
             state = .indexing(folderCount: bookmarks.count)
+            panelController?.updateLocalIndexState(state)
             notifyStateChange()
             try await service.replaceAuthorizedFolders(bookmarks)
             await synchronizeFromService(refreshSearch: true)
@@ -120,6 +128,7 @@ final class LocalIndexCoordinator {
 
     private func synchronizeFromService(refreshSearch: Bool) async {
         state = await service.state
+        panelController?.updateLocalIndexState(state)
         if refreshSearch {
             panelController?.refreshLocalIndex()
         }
@@ -136,6 +145,8 @@ final class LocalIndexCoordinator {
              let .needsRefresh(folderCount):
             return folderCount
         case let .ready(_, folderCount, _):
+            return folderCount
+        case let .partial(_, folderCount, _):
             return folderCount
         case .disabled, .needsAuthorization, .failed:
             return 0

@@ -50,7 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.preloadRecentFiles()
         indexCoordinator.bootstrap()
         monitor.start()
-        requestInitialPermissionIfNeeded(using: monitor)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -194,12 +193,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    private func requestInitialPermissionIfNeeded(using monitor: FileDialogMonitor) {
-        guard !AccessibilityPermission.isTrusted(promptIfNeeded: false) else {
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            monitor.requestAccessibilityPermission()
-        }
-    }
 }

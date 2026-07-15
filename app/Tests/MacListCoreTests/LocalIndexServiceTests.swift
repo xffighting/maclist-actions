@@ -175,6 +175,104 @@ final class LocalIndexServiceTests: XCTestCase {
         }
     }
 
+    func testReplacingAuthorizationDeletesOldIndexWhenNewBuildIsCancelled() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let oldFolder = try makeAuthorizedFolder(in: sandbox, name: "旧客户资料")
+        let newFolder = try makeAuthorizedFolder(in: sandbox, name: "新客户资料")
+        let oldBookmark = try AuthorizedFolderBookmark.create(for: oldFolder)
+        let newBookmark = try AuthorizedFolderBookmark.create(for: newFolder)
+        let oldRevision = UUID()
+        let oldSnapshot = makeSnapshot(
+            root: oldFolder,
+            revision: oldRevision,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let stores = makeStores(in: sandbox)
+        try stores.authorized.save(AuthorizedFolderSet(
+            revision: oldRevision,
+            folders: [oldBookmark]
+        ))
+        try stores.index.save(oldSnapshot)
+        let provider = LocalIndexProvider(snapshot: oldSnapshot)
+        let builder = ImmediateLocalIndexBuilder(wasCancelled: true)
+        let service = LocalIndexService(
+            provider: provider,
+            authorizedFolderStore: stores.authorized,
+            indexStore: stores.index,
+            indexer: builder
+        )
+
+        try await service.replaceAuthorizedFolders([newBookmark])
+
+        let replacement = try stores.authorized.loadSet()
+        XCTAssertEqual(replacement.folders, [newBookmark])
+        XCTAssertNotEqual(replacement.revision, oldRevision)
+        XCTAssertEqual(provider.snapshot, .empty)
+        XCTAssertNil(
+            try stores.index.loadIfPresent(),
+            "saving a new authorization must invalidate the old cache even when its build is cancelled"
+        )
+        guard case .needsRefresh(folderCount: 1) = await service.state else {
+            return XCTFail("a cancelled replacement build should remain pending refresh")
+        }
+    }
+
+    func testRootReplacementDuringBuildCannotPublishOrPersistSnapshot() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folder = try makeAuthorizedFolder(in: sandbox, name: "客户资料")
+        let movedFolder = sandbox.appendingPathComponent("客户资料-原目录", isDirectory: true)
+        let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+        let stores = makeStores(in: sandbox)
+        let provider = LocalIndexProvider()
+        let builder = BlockingCancellationIgnoringBuilder()
+        let service = LocalIndexService(
+            provider: provider,
+            authorizedFolderStore: stores.authorized,
+            indexStore: stores.index,
+            indexer: builder
+        )
+        let replacement = Task {
+            try await service.replaceAuthorizedFolders([bookmark])
+        }
+        XCTAssertTrue(
+            builder.waitUntilBuildStarts(timeout: 2),
+            "the test must replace the directory only after indexing captures the authorized root"
+        )
+        defer { builder.finishBuild() }
+
+        try FileManager.default.moveItem(at: folder, to: movedFolder)
+        try FileManager.default.createDirectory(
+            at: folder,
+            withIntermediateDirectories: true
+        )
+        XCTAssertTrue(FileManager.default.createFile(
+            atPath: folder.appendingPathComponent("冒名文件.pdf").path,
+            contents: Data("replacement".utf8)
+        ))
+        builder.finishBuild()
+        _ = try? await replacement.value
+
+        XCTAssertEqual(
+            provider.snapshot,
+            .empty,
+            "a different directory created at the same path must not inherit the old authorization"
+        )
+        XCTAssertNil(
+            try stores.index.loadIfPresent(),
+            "a snapshot built after the authorized directory identity changes must not be persisted"
+        )
+        switch await service.state {
+        case .needsRefresh(folderCount: 1), .needsAuthorization:
+            break
+        default:
+            XCTFail("a replaced authorized root must require refresh or renewed authorization")
+        }
+    }
+
     func testReplacingAuthorizedFoldersPersistsRevisionRebuildsAndPublishesReadySnapshot() async throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }
@@ -201,6 +299,61 @@ final class LocalIndexServiceTests: XCTestCase {
         XCTAssertEqual(builder.invocationCount, 1)
         guard case .ready(fileCount: 1, folderCount: 1, generatedAt: _) = await service.state else {
             return XCTFail("a successful replacement build should publish a ready local index")
+        }
+    }
+
+    func testNonCancelledIncompleteReportsPersistSafeResultsButNeverClaimReady() async throws {
+        let scenarios: [(
+            name: String,
+            reachedLimit: Bool,
+            reachedVisitLimit: Bool,
+            inaccessibleRootCount: Int
+        )] = [
+            ("file limit", true, false, 0),
+            ("visit limit", false, true, 0),
+            ("inaccessible root", false, false, 1),
+        ]
+
+        for scenario in scenarios {
+            let sandbox = try makeSandbox()
+            defer { try? FileManager.default.removeItem(at: sandbox) }
+
+            let folder = try makeAuthorizedFolder(in: sandbox, name: "远航工业")
+            let bookmark = try AuthorizedFolderBookmark.create(for: folder)
+            let provider = LocalIndexProvider()
+            let builder = ImmediateLocalIndexBuilder(
+                reachedLimit: scenario.reachedLimit,
+                reachedVisitLimit: scenario.reachedVisitLimit,
+                inaccessibleRootCount: scenario.inaccessibleRootCount
+            )
+            let stores = makeStores(in: sandbox)
+            let service = LocalIndexService(
+                provider: provider,
+                authorizedFolderStore: stores.authorized,
+                indexStore: stores.index,
+                indexer: builder
+            )
+
+            try await service.replaceAuthorizedFolders([bookmark])
+
+            let storedSnapshot = try stores.index.load()
+            XCTAssertEqual(
+                provider.snapshot,
+                storedSnapshot,
+                "\(scenario.name) may keep its safe partial results searchable"
+            )
+            XCTAssertEqual(storedSnapshot.entries.count, 1)
+            guard case .partial(
+                fileCount: let fileCount,
+                folderCount: let folderCount,
+                generatedAt: let generatedAt
+            ) = await service.state else {
+                XCTFail("\(scenario.name) must be visibly partial, never ready")
+                continue
+            }
+            XCTAssertEqual(fileCount, 1)
+            XCTAssertEqual(folderCount, 1)
+            XCTAssertEqual(generatedAt, storedSnapshot.generatedAt)
         }
     }
 
@@ -269,10 +422,21 @@ final class LocalIndexServiceTests: XCTestCase {
 private final class ImmediateLocalIndexBuilder: LocalIndexBuilding, @unchecked Sendable {
     private let lock = NSLock()
     private let wasCancelled: Bool
+    private let reachedLimit: Bool
+    private let reachedVisitLimit: Bool
+    private let inaccessibleRootCount: Int
     private var storedInvocationCount = 0
 
-    init(wasCancelled: Bool = false) {
+    init(
+        wasCancelled: Bool = false,
+        reachedLimit: Bool = false,
+        reachedVisitLimit: Bool = false,
+        inaccessibleRootCount: Int = 0
+    ) {
         self.wasCancelled = wasCancelled
+        self.reachedLimit = reachedLimit
+        self.reachedVisitLimit = reachedVisitLimit
+        self.inaccessibleRootCount = inaccessibleRootCount
     }
 
     var invocationCount: Int {
@@ -303,8 +467,9 @@ private final class ImmediateLocalIndexBuilder: LocalIndexBuilding, @unchecked S
                 rootRevision: rootRevision
             ),
             skippedCount: 0,
-            inaccessibleRootCount: 0,
-            reachedLimit: false,
+            inaccessibleRootCount: inaccessibleRootCount,
+            reachedLimit: reachedLimit,
+            reachedVisitLimit: reachedVisitLimit,
             wasCancelled: wasCancelled
         )
     }
