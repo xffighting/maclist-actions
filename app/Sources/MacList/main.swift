@@ -14,7 +14,9 @@ if CommandLine.arguments.contains("--doctor") {
     exit(spotlight ? EXIT_SUCCESS : EXIT_FAILURE)
 }
 
-let application = NSApplication.shared
-let delegate = AppDelegate()
-application.delegate = delegate
-application.run()
+MainActor.assumeIsolated {
+    let application = NSApplication.shared
+    let delegate = AppDelegate()
+    application.delegate = delegate
+    application.run()
+}

@@ -1,25 +1,22 @@
 import AppKit
 import MacListCore
-import OSLog
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var panelController: SearchPanelController?
     private var dialogMonitor: FileDialogMonitor?
+    private var localIndexCoordinator: LocalIndexCoordinator?
     private var monitorStatus: FileDialogMonitorStatus = .waitingForApplication
-    private let logger = Logger(
-        subsystem: "com.xffighting.maclist",
-        category: "SearchPermission"
-    )
-    private var isCheckingSearchFolderAccess = false
-    private var searchFolderAccessSummary = "文件搜索：常用位置访问权限未检查"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         let bridge = FileDialogBridge()
+        let indexCoordinator = LocalIndexCoordinator()
         let controller = SearchPanelController(
             provider: SpotlightProvider(),
+            localIndexProvider: indexCoordinator.provider,
             dialogBridge: bridge
         )
         let monitor = FileDialogMonitor()
@@ -40,18 +37,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.isAttachedPanelKey = { [weak controller] in
             controller?.isPanelKeyAndVisible ?? false
         }
+        indexCoordinator.bind(panelController: controller)
+        indexCoordinator.onStateChange = { [weak self] in
+            self?.rebuildMenu()
+        }
 
         panelController = controller
         dialogMonitor = monitor
+        localIndexCoordinator = indexCoordinator
         configureStatusItem()
         rebuildMenu()
         controller.preloadRecentFiles()
+        indexCoordinator.bootstrap()
         monitor.start()
         requestInitialPermissionIfNeeded(using: monitor)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         dialogMonitor?.stop()
+        localIndexCoordinator?.cancel()
     }
 
     private func configureStatusItem() {
@@ -97,22 +101,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-        let searchStatus = NSMenuItem(
-            title: searchFolderAccessSummary,
+        let indexPresentation = localIndexCoordinator?.menuPresentation
+            ?? LocalIndexMenuPresentation(state: .disabled)
+        let indexStatus = NSMenuItem(
+            title: indexPresentation.statusTitle,
             action: nil,
             keyEquivalent: ""
         )
-        searchStatus.isEnabled = false
-        menu.addItem(searchStatus)
-        let searchPermissionItem = NSMenuItem(
-            title: isCheckingSearchFolderAccess
-                ? "正在检查文件夹权限…"
-                : "检查常用文件夹与云盘访问权限…",
-            action: #selector(requestSearchFolderAccess),
+        indexStatus.isEnabled = false
+        menu.addItem(indexStatus)
+
+        let chooseFoldersItem = NSMenuItem(
+            title: indexPresentation.chooseFoldersTitle,
+            action: #selector(chooseIndexFolders),
             keyEquivalent: ""
         )
-        searchPermissionItem.isEnabled = !isCheckingSearchFolderAccess
-        menu.addItem(searchPermissionItem)
+        chooseFoldersItem.isEnabled = indexPresentation.canChooseFolders
+        menu.addItem(chooseFoldersItem)
+
+        if indexPresentation.canRebuild || indexPresentation.canClear {
+            let rebuildItem = NSMenuItem(
+                title: "立即更新本地索引",
+                action: #selector(rebuildLocalIndex),
+                keyEquivalent: ""
+            )
+            rebuildItem.isEnabled = indexPresentation.canRebuild
+            menu.addItem(rebuildItem)
+
+            let clearItem = NSMenuItem(
+                title: "清空本地索引…",
+                action: #selector(clearLocalIndex),
+                keyEquivalent: ""
+            )
+            clearItem.isEnabled = indexPresentation.canClear
+            menu.addItem(clearItem)
+        }
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 MacList", action: #selector(quit), keyEquivalent: "q")
@@ -151,65 +174,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dialogMonitor?.scanNow()
     }
 
-    @objc private func requestSearchFolderAccess() {
-        guard !isCheckingSearchFolderAccess else { return }
-        isCheckingSearchFolderAccess = true
-        searchFolderAccessSummary = "文件搜索：正在检查常用位置访问权限"
-        rebuildMenu()
+    @objc private func chooseIndexFolders() {
+        localIndexCoordinator?.chooseFolders()
+    }
 
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let commonFolders = [
-            home.appendingPathComponent("Desktop", isDirectory: true),
-            home.appendingPathComponent("Documents", isDirectory: true),
-            home.appendingPathComponent("Downloads", isDirectory: true),
-            home.appendingPathComponent(
-                "Library/Mobile Documents/com~apple~CloudDocs",
-                isDirectory: true
-            )
-        ]
-        let cloudStorage = home.appendingPathComponent(
-            "Library/CloudStorage",
-            isDirectory: true
-        )
+    @objc private func rebuildLocalIndex() {
+        localIndexCoordinator?.rebuild()
+    }
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let fileManager = FileManager.default
-            let cloudDomainListing = try? fileManager.contentsOfDirectory(
-                at: cloudStorage,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-            let cloudDomains = cloudDomainListing?.filter { url in
-                (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-            } ?? []
-            let folders = commonFolders + cloudDomains
-            let accessibleCount = folders.reduce(into: 0) { count, folder in
-                if (try? fileManager.contentsOfDirectory(
-                    at: folder,
-                    includingPropertiesForKeys: nil,
-                    options: [.skipsHiddenFiles]
-                )) != nil {
-                    count += 1
-                }
-            }
-
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isCheckingSearchFolderAccess = false
-                if accessibleCount == 0 {
-                    self.searchFolderAccessSummary = "文件搜索：未能访问常用位置，可能尚未授权"
-                } else if cloudDomainListing == nil {
-                    self.searchFolderAccessSummary = "文件搜索：可访问 \(accessibleCount) 个位置；云盘待授权"
-                } else {
-                    self.searchFolderAccessSummary = "文件搜索：当前可访问 \(accessibleCount) 个位置"
-                }
-                self.logger.notice(
-                    "common folder access available=\(accessibleCount, privacy: .public) cloudChecked=\(cloudDomainListing != nil, privacy: .public)"
-                )
-                self.panelController?.preloadRecentFiles()
-                self.rebuildMenu()
-            }
-        }
+    @objc private func clearLocalIndex() {
+        localIndexCoordinator?.confirmAndClear()
     }
 
     @objc private func quit() {

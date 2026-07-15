@@ -45,7 +45,9 @@ final class SearchPanelController: NSWindowController,
     )
     private let emptyStateLabel = NSTextField(wrappingLabelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
-    private let instructionLabel = NSTextField(labelWithString: "↩ 选择  ·  ↑↓ 移动  ·  Esc 收起")
+    private let instructionLabel = NSTextField(
+        labelWithString: "↑↓ 移动  ·  ↩ 选中  ·  再点打开  ·  Esc 收起"
+    )
     private var expandedConstraints: [NSLayoutConstraint] = []
 
     private var dialogSession: FileDialogSession?
@@ -131,7 +133,7 @@ final class SearchPanelController: NSWindowController,
             searchField.stringValue = ""
             lastHandledQuery = ""
             searchPhase = .idle
-            searchField.placeholderString = "在 \(session.hostApplicationName) 的上传窗口中搜索文件"
+            searchField.placeholderString = "搜索客户、项目或文件"
             applySearch()
             setExpanded(false)
         }
@@ -302,7 +304,7 @@ final class SearchPanelController: NSWindowController,
         contentView.addSubview(effect)
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.placeholderString = "搜索要上传的文件"
+        searchField.placeholderString = "搜索客户、项目或文件"
         searchField.controlSize = .large
         searchField.delegate = self
         searchField.sendsSearchStringImmediately = true
@@ -547,14 +549,14 @@ final class SearchPanelController: NSWindowController,
             emptyStateLabel.isHidden = false
             switch searchPhase {
             case .idle:
-                emptyStateLabel.stringValue = "输入文件名开始搜索"
+                emptyStateLabel.stringValue = "输入客户名、项目名或文件名"
                 statusLabel.stringValue = ""
             case .loading:
                 emptyStateLabel.stringValue = "正在搜索这台 Mac…"
-                statusLabel.stringValue = "支持文件名片段和多关键词"
+                statusLabel.stringValue = "支持客户名、项目名、文件名和路径片段"
             case .ready:
-                emptyStateLabel.stringValue = "没有找到匹配文件\n请尝试更短的文件名"
-                statusLabel.stringValue = "Spotlight 已完成查询"
+                emptyStateLabel.stringValue = "没有找到匹配文件\n请尝试客户名、项目名或更短片段"
+                statusLabel.stringValue = "本机文件查询已完成"
             case let .failed(message):
                 emptyStateLabel.stringValue = "搜索暂时不可用\n请稍后重试"
                 statusLabel.stringValue = message
@@ -570,7 +572,7 @@ final class SearchPanelController: NSWindowController,
         case let .failed(message):
             statusLabel.stringValue = "\(displayedRecords.count) 个本地匹配 · \(message)"
         case .idle, .ready:
-            statusLabel.stringValue = "\(displayedRecords.count) 个匹配 · 只读取文件名和路径"
+            statusLabel.stringValue = "\(displayedRecords.count) 个匹配 · 只读取文件名、路径和修改时间"
         }
     }
 
