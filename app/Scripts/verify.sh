@@ -3,12 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-"$ROOT/Scripts/smoke-test.sh"
+"$ROOT/Scripts/all-smoke-tests.sh"
 
-if swift -e 'import XCTest' >/dev/null 2>&1; then
+if [[ "${MACLIST_SKIP_XCTEST:-0}" == "1" ]]; then
+  echo "XCTest skipped because MACLIST_SKIP_XCTEST=1."
+elif [[ "$(xcode-select -p 2>/dev/null || true)" == *"/Xcode.app/Contents/Developer"* ]] \
+  && swift -e 'import XCTest' >/dev/null 2>&1; then
   swift test --package-path "$ROOT"
 else
-  echo "XCTest unavailable in Command Line Tools; GitHub Actions runs the XCTest suite."
+  echo "Full Xcode unavailable; GitHub Actions runs the XCTest suite."
 fi
 
 "$ROOT/Scripts/build-app.sh" release

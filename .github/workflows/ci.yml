@@ -60,7 +60,7 @@ jobs:
         run: swift test --package-path app
 
       - name: Run framework-free smoke tests
-        run: ./app/Scripts/smoke-test.sh
+        run: ./app/Scripts/all-smoke-tests.sh
 
       - name: Build the menu bar app without launching UI
         run: ./app/Scripts/build-app.sh release
@@ -69,11 +69,16 @@ jobs:
         shell: zsh {0}
         run: |
           set -euo pipefail
-          if rg -n 'NSApp\.(activate|deactivate)|NSWorkspace\.shared\.open|activateFileViewerSelecting|NSPasteboard|NSAppleScript|RegisterEventHotKey|addGlobalMonitorForEvents' app/Sources/MacList; then
+          if rg -n \
+            'NSApp\.(activate|deactivate)|NSWorkspace\.shared\.open|activateFileViewerSelecting|NSPasteboard|NSAppleScript|RegisterEventHotKey|addGlobalMonitorForEvents' \
+            app/Sources/MacList \
+            -g '!LocalIndexCoordinator.swift'; then
             print -u2 'FAIL native primary flow contains app switching or clipboard behavior'
             exit 1
           fi
-          print 'PASS native primary flow has no app switching or clipboard behavior'
+          rg -Fq 'let panel = NSOpenPanel()' app/Sources/MacList/LocalIndexCoordinator.swift
+          rg -Fq 'NSApp.activate' app/Sources/MacList/LocalIndexCoordinator.swift
+          print 'PASS primary flow has no app switching; activation is limited to user-requested folder setup'
 
   media:
     name: Release media · dimensions and privacy
@@ -147,11 +152,12 @@ jobs:
 
           print 'PASS no absolute macOS user paths or credential-shaped strings found'
 
-      - name: Verify v0.2 release metadata
+      - name: Verify native preview metadata
         shell: zsh {0}
         run: |
           set -euo pipefail
-          [[ "$(tr -d '[:space:]' < VERSION)" == "0.2.0" ]]
-          grep -Fq '## 0.2.0' CHANGELOG.md
+          [[ "$(tr -d '[:space:]' < VERSION)" == "0.3.0" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/Resources/Info.plist)" == "0.3.0" ]]
+          grep -Fq '## Unreleased' CHANGELOG.md
           grep -Fq 'swift-tools-version: 6.0' standalone/Package.swift
-          print 'PASS v0.2.0 metadata is internally consistent'
+          print 'PASS v0.3.0 native preview metadata is internally consistent'
