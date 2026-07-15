@@ -25,7 +25,8 @@ public struct AuthorizedFolderBookmark: Codable, Equatable, Identifiable, Sendab
         self.displayName = displayName
         self.pathHint = pathHint
         self.bookmarkData = bookmarkData
-        self.createdAt = createdAt
+        let milliseconds = (createdAt.timeIntervalSince1970 * 1_000).rounded(.towardZero)
+        self.createdAt = Date(timeIntervalSince1970: milliseconds / 1_000)
     }
 
     public static func create(
@@ -127,18 +128,37 @@ public struct AuthorizedFolderStoreLimits: Equatable, Sendable {
     }
 }
 
+public struct AuthorizedFolderSet: Equatable, Sendable {
+    public let revision: UUID
+    public let folders: [AuthorizedFolderBookmark]
+
+    public init(
+        revision: UUID = UUID(),
+        folders: [AuthorizedFolderBookmark]
+    ) {
+        self.revision = revision
+        self.folders = folders
+    }
+}
+
 private struct AuthorizedFolderStoreEnvelope: Codable, Equatable, Sendable {
     static let currentFormatVersion = 1
 
     let formatVersion: Int
+    let revision: UUID
     let folders: [AuthorizedFolderBookmark]
 
     init(
         formatVersion: Int = AuthorizedFolderStoreEnvelope.currentFormatVersion,
-        folders: [AuthorizedFolderBookmark]
+        authorization: AuthorizedFolderSet
     ) {
         self.formatVersion = formatVersion
-        self.folders = folders
+        revision = authorization.revision
+        folders = authorization.folders
+    }
+
+    var authorization: AuthorizedFolderSet {
+        AuthorizedFolderSet(revision: revision, folders: folders)
     }
 }
 
@@ -167,15 +187,21 @@ public final class AuthorizedFolderStore: @unchecked Sendable {
     }
 
     public func save(_ folders: [AuthorizedFolderBookmark]) throws {
+        try save(AuthorizedFolderSet(folders: folders))
+    }
+
+    public func save(_ authorization: AuthorizedFolderSet) throws {
         lock.lock()
         defer { lock.unlock() }
-        try validate(folders, resolveBookmarks: true)
+        try validate(authorization.folders, resolveBookmarks: true)
         try prepareDirectory()
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .millisecondsSince1970
-        let data = try encoder.encode(AuthorizedFolderStoreEnvelope(folders: folders))
+        let data = try encoder.encode(
+            AuthorizedFolderStoreEnvelope(authorization: authorization)
+        )
         guard data.count <= limits.maximumBytes else {
             throw AuthorizedFolderStoreError.tooLarge
         }
@@ -183,16 +209,24 @@ public final class AuthorizedFolderStore: @unchecked Sendable {
     }
 
     public func load() throws -> [AuthorizedFolderBookmark] {
+        try loadSet().folders
+    }
+
+    public func loadSet() throws -> AuthorizedFolderSet {
         lock.lock()
         defer { lock.unlock() }
-        return try loadUnlocked()
+        return try loadSetUnlocked()
     }
 
     public func loadIfPresent() throws -> [AuthorizedFolderBookmark]? {
+        try loadSetIfPresent()?.folders
+    }
+
+    public func loadSetIfPresent() throws -> AuthorizedFolderSet? {
         lock.lock()
         defer { lock.unlock() }
         guard fileManager.fileExists(atPath: url.path) else { return nil }
-        return try loadUnlocked()
+        return try loadSetUnlocked()
     }
 
     public func clear() throws {
@@ -212,7 +246,7 @@ public final class AuthorizedFolderStore: @unchecked Sendable {
         }
     }
 
-    private func loadUnlocked() throws -> [AuthorizedFolderBookmark] {
+    private func loadSetUnlocked() throws -> AuthorizedFolderSet {
         guard fileManager.fileExists(atPath: url.path) else {
             throw AuthorizedFolderStoreError.notFound
         }
@@ -247,7 +281,7 @@ public final class AuthorizedFolderStore: @unchecked Sendable {
             throw AuthorizedFolderStoreError.unsupportedFormat(envelope.formatVersion)
         }
         try validate(envelope.folders, resolveBookmarks: true)
-        return envelope.folders
+        return envelope.authorization
     }
 
     private func validate(

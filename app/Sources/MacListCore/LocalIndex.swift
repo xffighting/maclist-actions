@@ -49,17 +49,21 @@ public struct LocalIndexSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: Date
     public let roots: [String]
     public let entries: [LocalIndexEntry]
+    public let rootRevision: UUID?
 
     public init(
         formatVersion: Int = LocalIndexSnapshot.currentFormatVersion,
         generatedAt: Date,
         roots: [String],
-        entries: [LocalIndexEntry]
+        entries: [LocalIndexEntry],
+        rootRevision: UUID? = nil
     ) {
         self.formatVersion = formatVersion
-        self.generatedAt = generatedAt
+        let milliseconds = (generatedAt.timeIntervalSince1970 * 1_000).rounded(.towardZero)
+        self.generatedAt = Date(timeIntervalSince1970: milliseconds / 1_000)
         self.roots = roots
         self.entries = entries
+        self.rootRevision = rootRevision
     }
 
     public static var empty: LocalIndexSnapshot {
@@ -126,6 +130,7 @@ public final class LocalFileIndexer: @unchecked Sendable {
     public func buildSnapshot(
         roots: [URL],
         generatedAt: Date = Date(),
+        rootRevision: UUID? = nil,
         isCancelled: @Sendable () -> Bool = { false }
     ) -> LocalIndexingReport {
         let authorizedRoots = normalizedReadableRoots(roots)
@@ -219,7 +224,8 @@ public final class LocalFileIndexer: @unchecked Sendable {
             snapshot: LocalIndexSnapshot(
                 generatedAt: generatedAt,
                 roots: authorizedRoots.map(\.path),
-                entries: entries
+                entries: entries,
+                rootRevision: rootRevision
             ),
             skippedCount: skippedCount,
             inaccessibleRootCount: max(0, roots.count - authorizedRoots.count),
