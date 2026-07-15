@@ -60,11 +60,155 @@ enum DialogSelectionPolicySmoke {
         precondition(protectedValidation.url == protectedFile.standardizedFileURL)
         precondition(protectedValidation.identity == nil)
 
-        let confirmPlan = DialogSelectionPolicy.plan(for: .selectAndConfirm)
-        precondition(confirmPlan.last == .confirmSelection)
+        let allowedTitles = [
+            "Open", "打开", "開啟",
+            "Choose File", "Select File", "Attach", "Attach File", "Upload",
+            "选择文件", "選擇檔案", "选择附件", "選擇附件", "上传", "上傳"
+        ]
+        for title in allowedTitles {
+            let context = DialogConfirmationContext(
+                kind: .openFile,
+                defaultButtonTitle: title,
+                exactSelectionVerified: true,
+                isCurrentSession: true
+            )
+            precondition(DialogSelectionPolicy.confirmationDecision(for: context) == .allow)
+            precondition(
+                DialogSelectionPolicy.plan(
+                    for: .selectAndConfirm,
+                    confirmationContext: context
+                ).last == .confirmSelection
+            )
+        }
 
-        let selectOnlyPlan = DialogSelectionPolicy.plan(for: .selectOnly)
-        precondition(!selectOnlyPlan.contains(.confirmSelection))
+        let rejectedTitles: [String?] = [
+            nil, "", "OK", "Continue", "Choose", "Select",
+            "Save", "Replace", "Send", "发送", "Open and Send", "Upload and Send"
+        ]
+        for title in rejectedTitles {
+            let context = DialogConfirmationContext(
+                kind: .openFile,
+                defaultButtonTitle: title,
+                exactSelectionVerified: true,
+                isCurrentSession: true
+            )
+            precondition(
+                DialogSelectionPolicy.confirmationDecision(for: context)
+                    == .deny(.unsafeDefaultAction)
+            )
+        }
+
+        for kind in [DialogKind.save, .folder, .unknown] {
+            let context = DialogConfirmationContext(
+                kind: kind,
+                defaultButtonTitle: "Open",
+                exactSelectionVerified: true,
+                isCurrentSession: true
+            )
+            precondition(
+                DialogSelectionPolicy.confirmationDecision(for: context)
+                    == .deny(.unsupportedDialogKind(kind))
+            )
+        }
+
+        let unverifiedContext = DialogConfirmationContext(
+            kind: .openFile,
+            defaultButtonTitle: "Open",
+            exactSelectionVerified: false,
+            isCurrentSession: true
+        )
+        precondition(
+            DialogSelectionPolicy.confirmationDecision(for: unverifiedContext)
+                == .deny(.exactSelectionNotVerified)
+        )
+
+        let staleContext = DialogConfirmationContext(
+            kind: .openFile,
+            defaultButtonTitle: "Open",
+            exactSelectionVerified: true,
+            isCurrentSession: false
+        )
+        precondition(
+            DialogSelectionPolicy.confirmationDecision(for: staleContext)
+                == .deny(.staleDialogSession)
+        )
+
+        precondition(
+            !DialogSelectionPolicy.plan(for: .selectAndConfirm).contains(.confirmSelection)
+        )
+        precondition(
+            !DialogSelectionPolicy.plan(
+                for: .selectOnly,
+                confirmationContext: DialogConfirmationContext(
+                    kind: .openFile,
+                    defaultButtonTitle: "Open",
+                    exactSelectionVerified: true,
+                    isCurrentSession: true
+                )
+            ).contains(.confirmSelection)
+        )
+
+        let safeConfirmation = DialogConfirmationSafetyContext(
+            mode: .selectAndConfirm,
+            sessionKind: .openFile,
+            freshKind: .openFile,
+            hasSaveFilenameField: false,
+            defaultButtonTitle: "Open",
+            targetPath: "/tmp/客户/报价单.pdf",
+            selectedPaths: ["/tmp/客户/报价单.pdf"],
+            hasUnresolvedSelection: false,
+            isCurrentSession: true,
+            isOperationActive: true,
+            ownerIsRunning: true,
+            originalWindowIsVisible: true,
+            hasCancelButton: true,
+            windowPIDMatchesOwner: true,
+            buttonPIDMatchesOwner: true,
+            windowRoleIsSupported: true,
+            buttonRoleIsButton: true,
+            buttonIsAuthoritativeDefault: true,
+            buttonIsDescendantOfOriginalWindow: true,
+            topLevelMatchesOriginalWindow: true,
+            originalWindowIsFocused: true,
+            buttonIsEnabled: true,
+            buttonSupportsPress: true
+        )
+        precondition(
+            DialogConfirmationSafetyPolicy.decision(for: safeConfirmation) == .allow
+        )
+
+        let multipleSelection = DialogConfirmationSafetyContext(
+            mode: .selectAndConfirm,
+            sessionKind: .openFile,
+            freshKind: .openFile,
+            hasSaveFilenameField: false,
+            defaultButtonTitle: "Open",
+            targetPath: "/tmp/客户/报价单.pdf",
+            selectedPaths: [
+                "/tmp/客户/报价单.pdf",
+                "/tmp/客户/另一份.pdf"
+            ],
+            hasUnresolvedSelection: false,
+            isCurrentSession: true,
+            isOperationActive: true,
+            ownerIsRunning: true,
+            originalWindowIsVisible: true,
+            hasCancelButton: true,
+            windowPIDMatchesOwner: true,
+            buttonPIDMatchesOwner: true,
+            windowRoleIsSupported: true,
+            buttonRoleIsButton: true,
+            buttonIsAuthoritativeDefault: true,
+            buttonIsDescendantOfOriginalWindow: true,
+            topLevelMatchesOriginalWindow: true,
+            originalWindowIsFocused: true,
+            buttonIsEnabled: true,
+            buttonSupportsPress: true
+        )
+        precondition(
+            DialogConfirmationSafetyPolicy.decision(for: multipleSelection)
+                == .deny(.exactSelectionNotVerified)
+        )
 
         FuzzySearchSmoke.run()
         try SpotlightProviderSmoke.run()

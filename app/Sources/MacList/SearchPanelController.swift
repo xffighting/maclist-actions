@@ -32,6 +32,7 @@ final class SearchPanelController: NSWindowController,
     private let spotlightProvider: SpotlightProvider
     private let localIndexProvider: LocalIndexProvider
     private let dialogBridge: FileDialogBridge
+    private let selectionModeProvider: () -> DialogSelectionMode
     private let logger = Logger(
         subsystem: "com.xffighting.maclist",
         category: "SearchPanel"
@@ -45,9 +46,7 @@ final class SearchPanelController: NSWindowController,
     )
     private let emptyStateLabel = NSTextField(wrappingLabelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
-    private let instructionLabel = NSTextField(
-        labelWithString: "↑↓ 移动  ·  ↩ 选中  ·  再点原窗口确认  ·  Esc 收起"
-    )
+    private let instructionLabel = NSTextField(labelWithString: "")
     private var expandedConstraints: [NSLayoutConstraint] = []
 
     private var dialogSession: FileDialogSession?
@@ -65,15 +64,20 @@ final class SearchPanelController: NSWindowController,
     private var isSuppressed = false
     private var isSubmitting = false
     private var selectionOperation: FileDialogSelectionOperation?
+    private var interactionLease: FileDialogInteractionLease?
 
     init(
         provider: SpotlightProvider,
         localIndexProvider: LocalIndexProvider = LocalIndexProvider(),
-        dialogBridge: FileDialogBridge
+        dialogBridge: FileDialogBridge,
+        selectionModeProvider: @escaping () -> DialogSelectionMode = {
+            DialogSelectionPreference.defaultMode
+        }
     ) {
         spotlightProvider = provider
         self.localIndexProvider = localIndexProvider
         self.dialogBridge = dialogBridge
+        self.selectionModeProvider = selectionModeProvider
 
         let panel = AttachedSearchPanel(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 62),
@@ -95,6 +99,7 @@ final class SearchPanelController: NSWindowController,
 
         super.init(window: panel)
         buildInterface()
+        updateSelectionModePresentation()
     }
 
     required init?(coder: NSCoder) {
@@ -129,12 +134,26 @@ final class SearchPanelController: NSWindowController,
         }
     }
 
+    func updateSelectionModePresentation() {
+        switch selectionModeProvider() {
+        case .selectAndConfirm:
+            instructionLabel.stringValue = "↑↓ 移动  ·  ↩ 选中并确认原窗口  ·  Esc 收起"
+        case .selectOnly:
+            instructionLabel.stringValue = "↑↓ 移动  ·  ↩ 只选中  ·  再点原窗口确认  ·  Esc 收起"
+        }
+    }
+
     func attach(to session: FileDialogSession, dialog: ObservedDialog) {
         let isNewDialog = interactionState.attach(dialogID: dialog.id)
-        dialogSession = session
+        if isNewDialog || dialogSession == nil {
+            dialogSession = session
+        }
         observedDialog = dialog
+        updateSelectionModePresentation()
 
         if isNewDialog {
+            interactionLease?.invalidate()
+            interactionLease = FileDialogInteractionLease(dialogID: dialog.id)
             focusGeneration = UUID()
             searchEpoch.invalidateAll()
             queryCancellation?.cancel()
@@ -161,7 +180,6 @@ final class SearchPanelController: NSWindowController,
             attach(to: session, dialog: dialog)
             return
         }
-        dialogSession = session
         observedDialog = dialog
         guard !isSuppressed else { return }
         positionPanel()
@@ -169,6 +187,8 @@ final class SearchPanelController: NSWindowController,
 
     func detach() {
         interactionState.detach()
+        interactionLease?.invalidate()
+        interactionLease = nil
         focusGeneration = UUID()
         searchEpoch.invalidateAll()
         queryCancellation?.cancel()
@@ -670,20 +690,28 @@ final class SearchPanelController: NSWindowController,
         guard !isSubmitting,
               let session = dialogSession,
               let interactionToken = interactionState.token,
+              let interactionLease,
               let record = selectedRecord else {
             NSSound.beep()
             return
         }
 
         isSubmitting = true
-        statusLabel.stringValue = "正在交给当前上传窗口…"
+        let selectionMode = selectionModeProvider()
+        switch selectionMode {
+        case .selectAndConfirm:
+            statusLabel.stringValue = "正在选中文件并确认原窗口…"
+        case .selectOnly:
+            statusLabel.stringValue = "正在原窗口中选中文件…"
+        }
         window?.orderOut(nil)
 
         selectionOperation?.cancel()
         selectionOperation = dialogBridge.selectFile(
             record.url,
             in: session,
-            mode: .selectOnly
+            mode: selectionMode,
+            interactionLease: interactionLease
         ) { [weak self] result in
             guard let self else { return }
             guard self.interactionState.isCurrent(interactionToken),

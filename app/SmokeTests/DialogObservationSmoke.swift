@@ -20,7 +20,23 @@ enum DialogObservationSmoke {
         precondition(DialogClassifier.kind(
             defaultButtonTitle: "Open",
             dialogContextText: "Open and Save Panel Service"
-        ) == .openFile)
+        ) == .save)
+        precondition(DialogClassifier.kind(
+            defaultButtonTitle: "Upload",
+            dialogContextText: "Choose where to save"
+        ) == .save)
+        precondition(DialogClassifier.kind(
+            defaultButtonTitle: "Upload",
+            defaultButtonIdentifier: "saveDocument:"
+        ) == .save)
+        precondition(DialogClassifier.kind(
+            defaultButtonTitle: "Upload",
+            hasSaveFilenameField: true
+        ) == .save)
+        precondition(DialogClassifier.kind(
+            defaultButtonTitle: "Open",
+            defaultButtonIdentifier: "ChooseFolder"
+        ) == .folder)
         let panelFrame = CGRect(x: 100, y: 100, width: 800, height: 600)
         precondition(DialogVisibleStackPolicy.isBoundToHost(
             dialogPID: 99,
@@ -78,6 +94,15 @@ enum DialogObservationSmoke {
         precondition(!interaction.attach(dialogID: "wechat-picker"))
         interaction.detach()
         precondition(!interaction.isCurrent(firstToken))
+
+        let lease = FileDialogInteractionLease(dialogID: "wechat-picker")
+        precondition(lease.isValid(for: "wechat-picker"))
+        precondition(!lease.consumeIfValid(for: "mail-picker"))
+        precondition(lease.consumeIfValid(for: "wechat-picker"))
+        precondition(!lease.consumeIfValid(for: "wechat-picker"))
+        let invalidatedLease = FileDialogInteractionLease(dialogID: "mail-picker")
+        invalidatedLease.invalidate()
+        precondition(!invalidatedLease.consumeIfValid(for: "mail-picker"))
         precondition(interaction.attach(dialogID: "mail-picker"))
         precondition(interaction.token != firstToken)
         precondition(DialogAttachmentFocusPolicy.shouldKeepAttached(

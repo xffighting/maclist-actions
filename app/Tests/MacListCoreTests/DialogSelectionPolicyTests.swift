@@ -9,16 +9,125 @@ final class DialogSelectionPolicyTests: XCTestCase {
         }
     }
 
-    func testSelectAndConfirmPlanEndsByConfirmingSelection() {
-        XCTAssertEqual(
-            DialogSelectionPolicy.plan(for: .selectAndConfirm).last,
-            .confirmSelection
+    func testSelectAndConfirmPlanFailsClosedWithoutConfirmationContext() {
+        XCTAssertFalse(
+            DialogSelectionPolicy.plan(for: .selectAndConfirm).contains(.confirmSelection)
         )
     }
 
     func testSelectOnlyPlanDoesNotConfirmSelection() {
         XCTAssertFalse(
             DialogSelectionPolicy.plan(for: .selectOnly).contains(.confirmSelection)
+        )
+    }
+
+    func testConfirmationAllowsOnlyExplicitFileActionsInCurrentVerifiedOpenDialog() {
+        let allowedTitles = [
+            "Open", "打开", "開啟",
+            "Choose File", "Select File", "Attach", "Attach File", "Upload",
+            "选择文件", "選擇檔案", "选择附件", "選擇附件", "上传", "上傳"
+        ]
+
+        for title in allowedTitles {
+            let context = DialogConfirmationContext(
+                kind: .openFile,
+                defaultButtonTitle: title,
+                exactSelectionVerified: true,
+                isCurrentSession: true
+            )
+            XCTAssertEqual(
+                DialogSelectionPolicy.confirmationDecision(for: context),
+                .allow,
+                "Expected explicit file action to be allowed: \(title)"
+            )
+            XCTAssertEqual(
+                DialogSelectionPolicy.plan(
+                    for: .selectAndConfirm,
+                    confirmationContext: context
+                ).last,
+                .confirmSelection,
+                "Expected safe plan to confirm: \(title)"
+            )
+        }
+    }
+
+    func testConfirmationRejectsAmbiguousOrDangerousDefaultActions() {
+        let rejectedTitles: [String?] = [
+            nil, "", "OK", "Continue", "Choose", "Select",
+            "Save", "Replace", "Send", "发送", "Open and Send", "Upload and Send"
+        ]
+
+        for title in rejectedTitles {
+            let context = DialogConfirmationContext(
+                kind: .openFile,
+                defaultButtonTitle: title,
+                exactSelectionVerified: true,
+                isCurrentSession: true
+            )
+            XCTAssertEqual(
+                DialogSelectionPolicy.confirmationDecision(for: context),
+                .deny(.unsafeDefaultAction),
+                "Expected default action to be rejected: \(title ?? "nil")"
+            )
+        }
+    }
+
+    func testConfirmationRejectsSaveFolderAndUnknownDialogs() {
+        for kind in [DialogKind.save, .folder, .unknown] {
+            let context = DialogConfirmationContext(
+                kind: kind,
+                defaultButtonTitle: "Open",
+                exactSelectionVerified: true,
+                isCurrentSession: true
+            )
+            XCTAssertEqual(
+                DialogSelectionPolicy.confirmationDecision(for: context),
+                .deny(.unsupportedDialogKind(kind))
+            )
+        }
+    }
+
+    func testConfirmationRejectsUnverifiedSelection() {
+        let context = DialogConfirmationContext(
+            kind: .openFile,
+            defaultButtonTitle: "Open",
+            exactSelectionVerified: false,
+            isCurrentSession: true
+        )
+
+        XCTAssertEqual(
+            DialogSelectionPolicy.confirmationDecision(for: context),
+            .deny(.exactSelectionNotVerified)
+        )
+    }
+
+    func testConfirmationRejectsStaleDialogSession() {
+        let context = DialogConfirmationContext(
+            kind: .openFile,
+            defaultButtonTitle: "Open",
+            exactSelectionVerified: true,
+            isCurrentSession: false
+        )
+
+        XCTAssertEqual(
+            DialogSelectionPolicy.confirmationDecision(for: context),
+            .deny(.staleDialogSession)
+        )
+    }
+
+    func testSelectOnlyNeverConfirmsEvenWithSafeContext() {
+        let context = DialogConfirmationContext(
+            kind: .openFile,
+            defaultButtonTitle: "Open",
+            exactSelectionVerified: true,
+            isCurrentSession: true
+        )
+
+        XCTAssertFalse(
+            DialogSelectionPolicy.plan(
+                for: .selectOnly,
+                confirmationContext: context
+            ).contains(.confirmSelection)
         )
     }
 

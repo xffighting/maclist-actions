@@ -90,6 +90,13 @@ public enum DialogClassifier {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
 
+        // A writable save-name field is authoritative negative evidence. App
+        // prompts are customizable, so a Save panel may label its button
+        // "Open" or "Upload"; never let that title override the structure.
+        if hasSaveFilenameField {
+            return .save
+        }
+
         let folderTokens = [
             "folder", "choose a folder", "select a folder",
             "文件夹", "檔案夾", "資料夾"
@@ -100,8 +107,29 @@ public enum DialogClassifier {
             "上传", "上傳", "附件", "选择文件", "選擇檔案"
         ]
         let saveTokens = ["save", "保存", "存储", "儲存"]
+        let contextHasFolder = folderTokens.contains(where: context.contains)
+        let contextHasOpen = (canonicalOpenTokens + fileActionTokens).contains(
+            where: context.contains
+        )
+        let contextHasSave = saveTokens.contains(where: context.contains)
+
+        // Any save-shaped evidence wins over a customized action title. This
+        // deliberately rejects ambiguous "Open and Save" descriptions: a
+        // false negative is recoverable by manual confirmation, while a false
+        // positive could press a Save panel's default button.
+        if saveTokens.contains(where: buttonTitle.contains)
+            || identifier.contains("save")
+            || contextHasSave {
+            return .save
+        }
 
         if folderTokens.contains(where: buttonTitle.contains) {
+            return .folder
+        }
+        if identifier.contains("folder") || identifier.contains("directory") {
+            return .folder
+        }
+        if contextHasFolder, !contextHasOpen, !contextHasSave {
             return .folder
         }
         if (canonicalOpenTokens + fileActionTokens).contains(
@@ -109,36 +137,13 @@ public enum DialogClassifier {
         ) {
             return .openFile
         }
-        if saveTokens.contains(where: buttonTitle.contains) {
-            return .save
-        }
-        if identifier.contains("folder") || identifier.contains("directory") {
-            return .folder
-        }
         if ["open", "attach", "upload", "choosefile", "selectfile"].contains(
             where: identifier.contains
         ) {
             return .openFile
         }
-        if identifier.contains("save") {
-            return .save
-        }
-        if hasSaveFilenameField {
-            return .save
-        }
-        let contextHasFolder = folderTokens.contains(where: context.contains)
-        let contextHasOpen = (canonicalOpenTokens + fileActionTokens).contains(
-            where: context.contains
-        )
-        let contextHasSave = saveTokens.contains(where: context.contains)
-        if contextHasFolder, !contextHasOpen, !contextHasSave {
-            return .folder
-        }
         if contextHasOpen, !contextHasSave {
             return .openFile
-        }
-        if contextHasSave, !contextHasOpen {
-            return .save
         }
         return .unknown
     }
@@ -239,6 +244,40 @@ public struct DialogInteractionState: Equatable, Sendable {
 
     public func isCurrent(_ token: DialogInteractionToken) -> Bool {
         token.dialogID == currentDialogID && token.generation == generation
+    }
+}
+
+/// A one-shot, thread-safe capability for the final Open-panel confirmation.
+/// Detaching invalidates it; consuming it succeeds exactly once for the bound
+/// dialog generation. No Accessibility work is performed while its lock is held.
+public final class FileDialogInteractionLease: @unchecked Sendable {
+    private let lock = NSLock()
+    private let dialogID: String
+    private var valid = true
+
+    public init(dialogID: String) {
+        self.dialogID = dialogID
+    }
+
+    public func invalidate() {
+        lock.lock()
+        valid = false
+        lock.unlock()
+    }
+
+    public func isValid(for dialogID: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return valid && self.dialogID == dialogID
+    }
+
+    @discardableResult
+    public func consumeIfValid(for dialogID: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard valid, self.dialogID == dialogID else { return false }
+        valid = false
+        return true
     }
 }
 

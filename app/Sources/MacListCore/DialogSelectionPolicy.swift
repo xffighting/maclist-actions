@@ -6,6 +6,37 @@ public enum DialogSelectionMode: String, Codable, Sendable {
     case selectOnly
 }
 
+public struct DialogConfirmationContext: Equatable, Sendable {
+    public let kind: DialogKind
+    public let defaultButtonTitle: String?
+    public let exactSelectionVerified: Bool
+    public let isCurrentSession: Bool
+
+    public init(
+        kind: DialogKind,
+        defaultButtonTitle: String?,
+        exactSelectionVerified: Bool,
+        isCurrentSession: Bool
+    ) {
+        self.kind = kind
+        self.defaultButtonTitle = defaultButtonTitle
+        self.exactSelectionVerified = exactSelectionVerified
+        self.isCurrentSession = isCurrentSession
+    }
+}
+
+public enum DialogConfirmationDenialReason: Equatable, Sendable {
+    case unsupportedDialogKind(DialogKind)
+    case unsafeDefaultAction
+    case exactSelectionNotVerified
+    case staleDialogSession
+}
+
+public enum DialogConfirmationDecision: Equatable, Sendable {
+    case allow
+    case deny(DialogConfirmationDenialReason)
+}
+
 public enum DialogBridgeStep: String, Codable, CaseIterable, Sendable {
     case restoreDialogFocus
     case openGoToFolder
@@ -26,6 +57,8 @@ public enum DialogSelectionError: Error, Equatable, LocalizedError, Sendable {
     case directoryNotAllowed(String)
     case bridgeTimedOut(DialogBridgeStep)
     case selectionCouldNotBeVerified(String)
+    case automaticConfirmationRefused
+    case confirmationResultUncertain
     case operationCancelled
     case systemFailure(String)
 
@@ -49,6 +82,10 @@ public enum DialogSelectionError: Error, Equatable, LocalizedError, Sendable {
             return "文件窗口响应超时（\(step.displayName)），原窗口仍保持打开。"
         case let .selectionCouldNotBeVerified(path):
             return "已定位到文件，但无法确认它已被精确选中：\(path)"
+        case .automaticConfirmationRefused:
+            return "文件已选中，但安全检查没有放行自动确认；请在原窗口手动点“打开”或“上传”。"
+        case .confirmationResultUncertain:
+            return "已请求原文件窗口确认，但没有确认窗口是否关闭；请回到原窗口检查，MacList 不会重复点击。"
         case .operationCancelled:
             return "原文件窗口已经关闭或切换，本次操作已取消。"
         case let .systemFailure(message):
@@ -92,6 +129,45 @@ public extension DialogBridgeStep {
 }
 
 public enum DialogSelectionPolicy {
+    private static let explicitFileConfirmationTitles: Set<String> = [
+        "open", "open file",
+        "choose file", "choose a file", "select file", "select a file",
+        "attach", "attach file", "upload", "upload file",
+        "打开", "打开文件", "開啟", "開啟檔案",
+        "选择文件", "選擇檔案", "选择附件", "選擇附件",
+        "上传", "上传文件", "上傳", "上傳檔案"
+    ]
+
+    public static func confirmationDecision(
+        for context: DialogConfirmationContext
+    ) -> DialogConfirmationDecision {
+        guard context.isCurrentSession else {
+            return .deny(.staleDialogSession)
+        }
+        guard context.exactSelectionVerified else {
+            return .deny(.exactSelectionNotVerified)
+        }
+        guard context.kind == .openFile else {
+            return .deny(.unsupportedDialogKind(context.kind))
+        }
+        guard let title = normalizedDefaultButtonTitle(context.defaultButtonTitle),
+              explicitFileConfirmationTitles.contains(title) else {
+            return .deny(.unsafeDefaultAction)
+        }
+        return .allow
+    }
+
+    private static func normalizedDefaultButtonTitle(_ title: String?) -> String? {
+        guard let title else { return nil }
+        let normalized = title
+            .precomposedStringWithCompatibilityMapping
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(with: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        return normalized.isEmpty ? nil : normalized
+    }
+
     public static func validateCandidate(
         _ url: URL
     ) throws -> ValidatedFile {
@@ -164,7 +240,10 @@ public enum DialogSelectionPolicy {
         return false
     }
 
-    public static func plan(for mode: DialogSelectionMode) -> [DialogBridgeStep] {
+    public static func plan(
+        for mode: DialogSelectionMode,
+        confirmationContext: DialogConfirmationContext? = nil
+    ) -> [DialogBridgeStep] {
         var steps: [DialogBridgeStep] = [
             .restoreDialogFocus,
             .openGoToFolder,
@@ -173,7 +252,9 @@ public enum DialogSelectionPolicy {
             .confirmPath,
             .verifyExactSelection
         ]
-        if mode == .selectAndConfirm {
+        if mode == .selectAndConfirm,
+           let confirmationContext,
+           confirmationDecision(for: confirmationContext) == .allow {
             steps.append(.confirmSelection)
         }
         return steps

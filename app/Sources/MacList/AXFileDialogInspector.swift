@@ -6,6 +6,8 @@ struct AXFileDialogInspection {
     let confidence: Int
     let kind: DialogKind
     let defaultButton: AXUIElement?
+    let authoritativeDefaultButton: AXUIElement?
+    let hasSaveFilenameField: Bool
     let fileContainers: [AXUIElement]
 }
 
@@ -48,7 +50,11 @@ final class AXFileDialogInspector {
                 || role == kAXStaticTextRole as String
         }
 
-        let defaultButton = AXAccess.element(root, kAXDefaultButtonAttribute)
+        let authoritativeDefaultButton = AXAccess.element(
+            root,
+            kAXDefaultButtonAttribute
+        )
+        let defaultButton = authoritativeDefaultButton
             ?? button(withIdentifier: "OKButton", in: allElements)
         let cancelButton = AXAccess.element(root, kAXCancelButtonAttribute)
             ?? button(withIdentifier: "CancelButton", in: allElements)
@@ -92,6 +98,8 @@ final class AXFileDialogInspector {
                 hasSaveFilenameField: hasSaveFilenameField
             ),
             defaultButton: defaultButton,
+            authoritativeDefaultButton: authoritativeDefaultButton,
+            hasSaveFilenameField: hasSaveFilenameField,
             fileContainers: fileContainers
         )
     }

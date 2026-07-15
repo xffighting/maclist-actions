@@ -1,8 +1,26 @@
 import CoreGraphics
+import Foundation
 @testable import MacListCore
 import XCTest
 
 final class DialogObservationTests: XCTestCase {
+    private final class LockedCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue = 0
+
+        func increment() {
+            lock.lock()
+            storedValue += 1
+            lock.unlock()
+        }
+
+        var value: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedValue
+        }
+    }
+
     func testSupportedDialogRequiresFileContainerAndBothActions() {
         XCTAssertTrue(DialogClassifier.isSupportedFileDialog(.init(
             role: "AXSheet",
@@ -34,6 +52,20 @@ final class DialogObservationTests: XCTestCase {
         XCTAssertEqual(DialogClassifier.kind(defaultButtonTitle: "选择"), .unknown)
         XCTAssertEqual(
             DialogClassifier.kind(
+                defaultButtonTitle: "Open",
+                defaultButtonIdentifier: "ChooseFolder"
+            ),
+            .folder
+        )
+        XCTAssertEqual(
+            DialogClassifier.kind(
+                defaultButtonTitle: "Upload",
+                dialogContextText: "Choose a folder"
+            ),
+            .folder
+        )
+        XCTAssertEqual(
+            DialogClassifier.kind(
                 defaultButtonTitle: "Attach"
             ),
             .openFile
@@ -45,19 +77,36 @@ final class DialogObservationTests: XCTestCase {
             ),
             .save
         )
+        for customizedPrompt in ["Open", "Upload", "打开", "上传"] {
+            XCTAssertEqual(
+                DialogClassifier.kind(
+                    defaultButtonTitle: customizedPrompt,
+                    hasSaveFilenameField: true
+                ),
+                .save,
+                "A custom prompt must not disguise a Save panel"
+            )
+        }
         XCTAssertEqual(
             DialogClassifier.kind(
                 defaultButtonTitle: "Open",
                 dialogContextText: "Open and Save Panel Service"
             ),
-            .openFile
+            .save
         )
         XCTAssertEqual(
             DialogClassifier.kind(
                 defaultButtonTitle: "Upload",
                 dialogContextText: "Choose where to save"
             ),
-            .openFile
+            .save
+        )
+        XCTAssertEqual(
+            DialogClassifier.kind(
+                defaultButtonTitle: "Upload",
+                defaultButtonIdentifier: "saveDocument:"
+            ),
+            .save
         )
         XCTAssertTrue(DialogClassifier.canAutomaticallyAttach(kind: .openFile))
         XCTAssertFalse(DialogClassifier.canAutomaticallyAttach(kind: .unknown))
@@ -89,6 +138,30 @@ final class DialogObservationTests: XCTestCase {
             [.updateAttachment(moved)]
         )
         XCTAssertEqual(state.handle(.scanCompleted([])), [.detach])
+    }
+
+    func testConfirmationLeaseIsBoundAndConsumableExactlyOnce() {
+        let lease = FileDialogInteractionLease(dialogID: "picker-1")
+        XCTAssertTrue(lease.isValid(for: "picker-1"))
+        XCTAssertFalse(lease.consumeIfValid(for: "picker-2"))
+
+        let successCount = LockedCounter()
+        DispatchQueue.concurrentPerform(iterations: 32) { _ in
+            if lease.consumeIfValid(for: "picker-1") {
+                successCount.increment()
+            }
+        }
+
+        XCTAssertEqual(successCount.value, 1)
+        XCTAssertFalse(lease.isValid(for: "picker-1"))
+        XCTAssertFalse(lease.consumeIfValid(for: "picker-1"))
+    }
+
+    func testInvalidatedConfirmationLeaseCannotBeConsumed() {
+        let lease = FileDialogInteractionLease(dialogID: "picker-1")
+        lease.invalidate()
+        XCTAssertFalse(lease.isValid(for: "picker-1"))
+        XCTAssertFalse(lease.consumeIfValid(for: "picker-1"))
     }
 
     func testDialogSelectionKeepsCurrentThenPrefersFocusedConfidence() {

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dialogMonitor: FileDialogMonitor?
     private var localIndexCoordinator: LocalIndexCoordinator?
     private var monitorStatus: FileDialogMonitorStatus = .waitingForApplication
+    private let selectionPreference = DialogSelectionPreference()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -17,7 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = SearchPanelController(
             provider: SpotlightProvider(),
             localIndexProvider: indexCoordinator.provider,
-            dialogBridge: bridge
+            dialogBridge: bridge,
+            selectionModeProvider: { [weak self] in
+                self?.selectionPreference.mode ?? DialogSelectionPreference.defaultMode
+            }
         )
         let monitor = FileDialogMonitor()
 
@@ -78,6 +82,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         status.isEnabled = false
         menu.addItem(status)
+
+        let selectionStatus = NSMenuItem(
+            title: selectionModeStatusTitle,
+            action: nil,
+            keyEquivalent: ""
+        )
+        selectionStatus.isEnabled = false
+        menu.addItem(selectionStatus)
+
+        let automaticConfirmationItem = NSMenuItem(
+            title: "选中文件后自动确认原窗口",
+            action: #selector(toggleAutomaticConfirmation),
+            keyEquivalent: ""
+        )
+        automaticConfirmationItem.state = selectionPreference.mode == .selectAndConfirm
+            ? .on
+            : .off
+        menu.addItem(automaticConfirmationItem)
 
         if !AccessibilityPermission.isTrusted(promptIfNeeded: false) {
             menu.addItem(
@@ -157,6 +179,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .waitingForApplication:
             return "自动唤起：等待文件上传窗口"
         }
+    }
+
+    private var selectionModeStatusTitle: String {
+        switch selectionPreference.mode {
+        case .selectAndConfirm:
+            return "回车动作：选中文件并确认原窗口"
+        case .selectOnly:
+            return "回车动作：只选中文件（手动确认）"
+        }
+    }
+
+    @objc private func toggleAutomaticConfirmation() {
+        selectionPreference.toggle()
+        panelController?.updateSelectionModePresentation()
+        rebuildMenu()
     }
 
     @objc private func requestPermission() {

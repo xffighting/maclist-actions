@@ -88,7 +88,9 @@ final class FileDialogDetector {
                 originalWindow: candidate,
                 originalFocusedElement: focused ?? candidate,
                 hostApplicationName: hostName,
-                dialogKind: inspection.kind
+                dialogKind: inspection.kind,
+                originalWindowRole: inspection.snapshot.role,
+                originalAuthoritativeDefaultButton: inspection.authoritativeDefaultButton
             )
             return DetectedFileDialog(
                 observed: ObservedDialog(
