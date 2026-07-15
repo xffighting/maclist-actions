@@ -14,6 +14,7 @@ TMP_ROOT="$(/usr/bin/mktemp -d -t maclist-custom-test)"
 PREF_DOMAIN="com.maclist.custom.test.$$"
 TEST_TARGET="$TMP_ROOT/scripts"
 TEST_STATE="$TMP_ROOT/state"
+EXPECTED_CUSTOMIZATION_VERSION="$(/usr/bin/tr -d '[:space:]' < "$ROOT/VERSION")"
 
 cleanup() {
   /usr/bin/defaults delete "$PREF_DOMAIN" >/dev/null 2>&1 || true
@@ -145,10 +146,10 @@ else
   fail "sandbox install added Apple Mail and Outlook workflows"
 fi
 
-if /usr/bin/grep -Fqx 'customization_version=0.2.0' "$TEST_STATE/active"; then
-  pass "install state records the v0.2.0 customization version"
+if /usr/bin/grep -Fqx "customization_version=$EXPECTED_CUSTOMIZATION_VERSION" "$TEST_STATE/active"; then
+  pass "install state records the current customization version"
 else
-  fail "install state records the v0.2.0 customization version"
+  fail "install state records the current customization version"
 fi
 
 # Emulate an active pre-mail-actions installation, then verify an in-place
