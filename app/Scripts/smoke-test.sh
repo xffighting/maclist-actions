@@ -11,6 +11,7 @@ swiftc \
   "$ROOT/SmokeTests/FuzzySearchSmoke.swift" \
   "$ROOT/SmokeTests/SpotlightProviderSmoke.swift" \
   "$ROOT/SmokeTests/DialogObservationSmoke.swift" \
+  "$ROOT/SmokeTests/AuthorizedFolderBookmarkSmoke.swift" \
   "$ROOT/SmokeTests/LocalIndexSmoke.swift" \
   "$ROOT/SmokeTests/SearchResultSetSmoke.swift" \
   "$ROOT/SmokeTests/DialogSelectionPolicySmoke.swift" \

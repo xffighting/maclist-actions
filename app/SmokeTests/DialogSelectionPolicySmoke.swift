@@ -69,6 +69,7 @@ enum DialogSelectionPolicySmoke {
         FuzzySearchSmoke.run()
         try SpotlightProviderSmoke.run()
         DialogObservationSmoke.run()
+        try AuthorizedFolderBookmarkSmoke.run()
         try LocalIndexSmoke.run()
         SearchResultSetSmoke.run()
         print("dialog-selection-policy: ok")

@@ -35,7 +35,10 @@ public struct LocalIndexEntry: Codable, Equatable, Identifiable, Sendable {
         self.path = canonicalPath
         self.displayName = displayName
             ?? URL(fileURLWithPath: canonicalPath).lastPathComponent
-        self.modifiedAt = modifiedAt
+        self.modifiedAt = modifiedAt.map { date in
+            let milliseconds = (date.timeIntervalSince1970 * 1_000).rounded(.towardZero)
+            return Date(timeIntervalSince1970: milliseconds / 1_000)
+        }
     }
 }
 
