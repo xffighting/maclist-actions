@@ -3,6 +3,7 @@ import Foundation
 public enum FileRecordSource: String, Codable, Sendable {
     case spotlight
     case history
+    case localIndex
 }
 
 public struct FileRecord: Identifiable, Equatable, Sendable {

@@ -62,6 +62,8 @@ public enum SearchEngine {
                 score += 48
             } else if isSubsequence(token, of: name) {
                 score += 30
+            } else if isSubsequence(token, of: path) {
+                score += 18
             } else {
                 return nil
             }
